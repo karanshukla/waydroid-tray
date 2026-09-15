@@ -645,7 +645,9 @@ dependencies = [
 name = "waydroid-tray"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "ksni",
+ "serde",
  "tokio",
  "zbus",
 ]
