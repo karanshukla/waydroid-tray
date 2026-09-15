@@ -30,6 +30,10 @@ const INTERFACE: &str = "id.waydro.ContainerManager";
 /// Refreshes the app list, and Running vs Frozen while a session exists
 /// (freezing doesn't show up on the bus).
 const POLL: Duration = Duration::from_secs(5);
+/// Waydroid claims its session name before it asks the container to start,
+/// so right after the name appears the container still reports no session.
+/// Re-check this often until it does.
+const STARTING_POLL: Duration = Duration::from_millis(500);
 /// How long to wait after a menu action before re-reading the state.
 const SETTLE: Duration = Duration::from_millis(1500);
 /// `session start` only returns when the session ends, so it only counts as
@@ -283,7 +287,7 @@ async fn read_state(system: &Connection) -> State {
     };
     let session: HashMap<String, String> = reply.body().deserialize().unwrap_or_default();
     match session.get("state").map(String::as_str) {
-        None => State::Stopped,
+        None | Some("STOPPED") => State::Stopped,
         Some("FROZEN") => State::Frozen,
         Some(_) => State::Running,
     }
@@ -349,23 +353,29 @@ fn spawn_waydroid(args: &[&str], session: Connection) {
         .process_group(0)
         .spawn();
     tokio::spawn(async move {
+        let summary = format!("{command} failed");
         let status = match child {
-            Err(err) => Err(err),
+            Err(err) => return notify_failure(&session, &summary, &err.to_string()).await,
             Ok(mut child) if starts_session => {
                 match tokio::time::timeout(START_GRACE, child.wait()).await {
-                    Ok(status) => status,
                     // Still going, so the session started. Reap it when it ends.
                     Err(_) => return drop(child.wait().await),
+                    // A started session doesn't return, so exiting this soon is
+                    // a failure even with status 0, which is what Waydroid exits
+                    // with when the container isn't listening.
+                    Ok(status) => status,
                 }
             }
-            Ok(mut child) => child.wait().await,
+            Ok(mut child) => match child.wait().await {
+                Ok(status) if status.success() => return,
+                status => status,
+            },
         };
-        let body = match status {
-            Ok(status) if status.success() => return,
-            Ok(status) => stderr.and_then(last_lines).unwrap_or_else(|| status.to_string()),
+        let body = stderr.and_then(last_lines).unwrap_or_else(|| match status {
+            Ok(status) => status.to_string(),
             Err(err) => err.to_string(),
-        };
-        notify_failure(&session, &format!("{command} failed"), &body).await;
+        });
+        notify_failure(&session, &summary, &body).await;
     });
 }
 
@@ -460,8 +470,10 @@ async fn main() {
     // Menu actions poke the loop to refresh sooner.
     let mut interval = tokio::time::interval(POLL);
     loop {
+        let starting = session_up && state == State::Stopped;
         let new_state = tokio::select! {
             _ = interval.tick() => if session_up { read_state(&system).await } else { state },
+            _ = tokio::time::sleep(STARTING_POLL), if starting => read_state(&system).await,
             _ = poke.notified() => {
                 tokio::time::sleep(SETTLE).await;
                 read_state(&system).await

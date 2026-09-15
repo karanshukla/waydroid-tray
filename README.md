@@ -52,5 +52,6 @@ The integration tests in `tests/harness.rs` run the real tray against private sy
 
 ## Limits
 
-- Session start and stop come from D-Bus name changes, so they show up straight away. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
+- Session start and stop come from D-Bus name changes. A stop shows up straight away. A start takes a moment longer, because Waydroid claims its session name before the container has a session to report, so the tray re-checks every 0.5s until it does. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
+- If no session is running, `app launch` and `show-full-ui` start one and run it in the foreground. Waydroid exits 0 when that start fails, so those failures don't get a notification. `session start` does, because a real start never exits within 5s.
 - Tested on Plasma 6 (Wayland) with Waydroid 1.6.3. Other StatusNotifierItem hosts should work but I haven't tried them.

@@ -31,13 +31,19 @@ const BUS_CONFIG: &str = r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bu
 </busconfig>
 "#;
 
-/// Logs its arguments, and fails if a `fail` file exists next to its dir.
+/// Logs its arguments. If a `fail` file exists next to its dir, it fails with
+/// the exit code in it. Otherwise `session start` keeps running like a real
+/// session, and records its pid so the harness can clean it up.
 const SHIM: &str = r#"#!/bin/sh
 root=$(dirname "$0")/..
 echo "$*" >> "$root/waydroid.log"
 if [ -e "$root/fail" ]; then
     echo "shim: $* failed" >&2
-    exit 1
+    exit "$(cat "$root/fail")"
+fi
+if [ "$*" = "session start" ]; then
+    echo $$ >> "$root/pids"
+    exec sleep 60
 fi
 "#;
 
@@ -184,11 +190,14 @@ impl Harness {
         self.system.request_name(CONTAINER_NAME).await.unwrap();
     }
 
-    /// Session up in `state`, in the order Waydroid does it.
+    /// Session up in `state`, in the order Waydroid does it: the session
+    /// manager claims its name first, and only then asks the (already running)
+    /// container to start, so for a moment `GetSession` still returns `{}`.
     async fn start_session(&self, state: &'static str) {
         self.start_container().await;
-        self.mock().session_state = Some(state);
         self.session.request_name(SESSION_NAME).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        self.mock().session_state = Some(state);
     }
 
     fn write_config(&self, text: &str) {
@@ -197,8 +206,9 @@ impl Harness {
         fs::write(path, text).unwrap();
     }
 
-    fn fail_waydroid(&self) {
-        fs::write(self.dir.join("fail"), "").unwrap();
+    /// Makes every `waydroid` command print an error and exit with `code`.
+    fn fail_waydroid(&self, code: i32) {
+        fs::write(self.dir.join("fail"), code.to_string()).unwrap();
     }
 
     fn waydroid_log(&self) -> Vec<String> {
@@ -282,6 +292,11 @@ impl Drop for Harness {
         for process in self.processes.iter_mut().rev() {
             let _ = process.kill();
             let _ = process.wait();
+        }
+        // Shim sessions run in their own process group, so they outlive the tray.
+        let pids = fs::read_to_string(self.dir.join("pids")).unwrap_or_default();
+        for pid in pids.lines() {
+            let _ = Command::new("kill").arg(pid).status();
         }
         let _ = fs::remove_dir_all(&self.dir);
     }
@@ -437,7 +452,22 @@ async fn freeze_error_is_notified() {
 #[tokio::test]
 async fn failed_command_is_notified_with_stderr() {
     let mut h = Harness::new().await;
-    h.fail_waydroid();
+    h.fail_waydroid(1);
+    h.start_tray().await;
+    h.click("Show full UI").await;
+    wait_for("a notification", QUICK, async || !h.mock().notifications.is_empty()).await;
+    let notifications = h.mock().notifications.clone();
+    assert_eq!(
+        notifications,
+        [("waydroid show-full-ui failed".into(), "shim: show-full-ui failed".into())]
+    );
+}
+
+#[tokio::test]
+async fn session_start_exiting_zero_early_is_notified() {
+    // Waydroid exits 0 when the container isn't listening.
+    let mut h = Harness::new().await;
+    h.fail_waydroid(0);
     h.start_tray().await;
     h.click("Start session").await;
     wait_for("a notification", QUICK, async || !h.mock().notifications.is_empty()).await;
@@ -446,6 +476,17 @@ async fn failed_command_is_notified_with_stderr() {
         notifications,
         [("waydroid session start failed".into(), "shim: session start failed".into())]
     );
+}
+
+#[tokio::test]
+async fn lasting_session_start_is_not_notified() {
+    let mut h = Harness::new().await;
+    h.start_tray().await;
+    h.click("Start session").await;
+    wait_for("the command", QUICK, async || h.waydroid_log() == ["session start"]).await;
+    // Past the tray's 5s grace period.
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    assert!(h.mock().notifications.is_empty(), "{:?}", h.mock().notifications);
 }
 
 #[tokio::test]
