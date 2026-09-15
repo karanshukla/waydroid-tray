@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Waydroid Tray
+Comment=Tray icon to start, stop and launch Waydroid apps
+Exec=@BIN@
+Icon=waydroid
+Categories=Utility;
+Terminal=false
