@@ -200,6 +200,13 @@ impl Harness {
         self.mock().session_state = Some(state);
     }
 
+    /// Session stopped cleanly: Waydroid clears the container's session
+    /// before the session manager drops its name.
+    async fn stop_session(&self) {
+        self.mock().session_state = None;
+        self.session.release_name(SESSION_NAME).await.unwrap();
+    }
+
     fn write_config(&self, text: &str) {
         let path = self.dir.join("config/waydroid-tray/config");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -267,17 +274,32 @@ impl Harness {
         self.tray_property("IconName").await
     }
 
-    async fn click(&self, label: &str) {
+    /// A menu item's id and properties, by label.
+    async fn menu_item(&self, label: &str) -> Option<(i32, HashMap<String, OwnedValue>)> {
         let reply = self
-            .tray_call("/MenuBar", "com.canonical.dbusmenu", "GetGroupProperties", &(Vec::<i32>::new(), vec!["label"]))
+            .tray_call(
+                "/MenuBar",
+                "com.canonical.dbusmenu",
+                "GetGroupProperties",
+                &(Vec::<i32>::new(), vec!["label", "enabled"]),
+            )
             .await;
         let items: Vec<(i32, HashMap<String, OwnedValue>)> = reply.body().deserialize().unwrap();
-        let (id, _) = items
-            .iter()
+        items
+            .into_iter()
             .find(|(_, props)| props.get("label").and_then(|v| v.downcast_ref::<&str>().ok()) == Some(label))
-            .unwrap_or_else(|| panic!("no menu item {label:?}"));
-        self.tray_call("/MenuBar", "com.canonical.dbusmenu", "Event", &(*id, "clicked", Value::from(0), 0u32))
+    }
+
+    async fn click(&self, label: &str) {
+        let (id, _) = self.menu_item(label).await.unwrap_or_else(|| panic!("no menu item {label:?}"));
+        self.tray_call("/MenuBar", "com.canonical.dbusmenu", "Event", &(id, "clicked", Value::from(0), 0u32))
             .await;
+    }
+
+    /// ksni leaves `enabled` out when it's the default, true.
+    async fn menu_enabled(&self, label: &str) -> bool {
+        let (_, props) = self.menu_item(label).await.unwrap_or_else(|| panic!("no menu item {label:?}"));
+        props.get("enabled").is_none_or(|v| v.downcast_ref::<bool>().unwrap())
     }
 
     async fn middle_click(&self) {
@@ -346,9 +368,38 @@ async fn session_stop_is_immediate() {
     h.start_session("RUNNING").await;
     h.start_tray().await;
     assert_eq!(h.icon().await, "waydroid-tray-running");
-    // GetSession would still say RUNNING, so only the signal can do this.
-    h.session.release_name(SESSION_NAME).await.unwrap();
+    h.stop_session().await;
     wait_for("Stopped", QUICK, async || h.icon().await == "waydroid-tray-stopped").await;
+}
+
+#[tokio::test]
+async fn starting_session_can_be_stopped() {
+    let mut h = Harness::new().await;
+    h.start_container().await;
+    h.start_tray().await;
+    // The session manager is up, but the container has no session yet.
+    h.session.request_name(SESSION_NAME).await.unwrap();
+    wait_for("Starting", QUICK, async || h.menu_item("Waydroid: Starting...").await.is_some()).await;
+    assert!(!h.menu_enabled("Start session").await);
+    assert!(h.menu_enabled("Stop session").await);
+    h.middle_click().await;
+    wait_for("session stop", QUICK, async || h.waydroid_log() == ["session stop"]).await;
+}
+
+#[tokio::test]
+async fn failed_stop_leaves_it_stuck() {
+    let mut h = Harness::new().await;
+    h.start_session("RUNNING").await;
+    h.start_tray().await;
+    // The stop failed partway, so the container keeps a stale session.
+    h.mock().session_state = Some("STOPPED");
+    h.session.release_name(SESSION_NAME).await.unwrap();
+    let stuck = "Waydroid: Stuck (stop the session to reset)";
+    wait_for("Stuck", QUICK, async || h.menu_item(stuck).await.is_some()).await;
+    assert!(!h.menu_enabled("Start session").await);
+    assert!(h.menu_enabled("Stop session").await);
+    h.middle_click().await;
+    wait_for("session stop", QUICK, async || h.waydroid_log() == ["session stop"]).await;
 }
 
 #[tokio::test]

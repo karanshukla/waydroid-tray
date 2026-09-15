@@ -45,22 +45,30 @@ const ERROR_LINES: usize = 5;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum State {
     Stopped,
+    /// Waydroid's session manager is up, but the container has no session yet.
+    Starting,
     Running,
     Frozen,
+    /// The container is holding on to a session nothing owns any more, left
+    /// behind by a stop that failed partway. Waydroid refuses new starts
+    /// ("Already tracking a session") until it's stopped again.
+    Stuck,
 }
 
 impl State {
     fn label(self) -> &'static str {
         match self {
             State::Stopped => "Stopped",
+            State::Starting => "Starting...",
             State::Running => "Running",
             State::Frozen => "Frozen (idle)",
+            State::Stuck => "Stuck (stop the session to reset)",
         }
     }
 
     fn icon(self) -> &'static str {
         match self {
-            State::Stopped => "waydroid-tray-stopped",
+            State::Stopped | State::Starting | State::Stuck => "waydroid-tray-stopped",
             State::Running => "waydroid-tray-running",
             State::Frozen => "waydroid-tray-frozen",
         }
@@ -170,6 +178,7 @@ impl ksni::Tray for WaydroidTray {
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let stopped = self.state == State::Stopped;
+        let active = matches!(self.state, State::Running | State::Frozen);
         // Also the container manager method to call.
         let freeze = if self.state == State::Frozen { "Unfreeze" } else { "Freeze" };
         let apps: Vec<MenuItem<Self>> = self
@@ -213,7 +222,7 @@ impl ksni::Tray for WaydroidTray {
             .into(),
             StandardItem {
                 label: freeze.into(),
-                enabled: !stopped,
+                enabled: active,
                 activate: Box::new(move |tray: &mut Self| tray.call(freeze)),
                 ..Default::default()
             }
@@ -287,7 +296,8 @@ async fn read_state(system: &Connection) -> State {
     };
     let session: HashMap<String, String> = reply.body().deserialize().unwrap_or_default();
     match session.get("state").map(String::as_str) {
-        None | Some("STOPPED") => State::Stopped,
+        None => State::Stopped,
+        Some("STOPPED") => State::Stuck,
         Some("FROZEN") => State::Frozen,
         Some(_) => State::Running,
     }
@@ -295,6 +305,12 @@ async fn read_state(system: &Connection) -> State {
 
 fn gained_owner(change: &NameOwnerChanged) -> bool {
     change.args().is_ok_and(|args| args.new_owner.is_some())
+}
+
+/// While the session manager is up, "no session" from the container just
+/// means it hasn't started one yet.
+fn with_session(state: State, session_up: bool) -> State {
+    if session_up && state == State::Stopped { State::Starting } else { state }
 }
 
 /// Visible Waydroid apps, read from the launchers Waydroid generates.
@@ -446,7 +462,7 @@ async fn main() {
 
     let session_name = BusName::try_from(SESSION_NAME).expect("valid bus name");
     let mut session_up = session_dbus.name_has_owner(session_name).await.unwrap_or(false);
-    let mut state = read_state(&system).await;
+    let mut state = with_session(read_state(&system).await, session_up);
     if config.start_at_login && !session_up {
         spawn_waydroid(&["session", "start"], session.clone());
     }
@@ -466,14 +482,15 @@ async fn main() {
     let handle = tray.spawn().await.expect("register the tray icon");
 
     // Session start and stop show up as the session manager's bus name coming
-    // and going. Freezing doesn't, so poll for that while a session exists.
-    // Menu actions poke the loop to refresh sooner.
+    // and going. Freezing doesn't, so poll for that while a session exists,
+    // and for a stuck one getting cleared. Menu actions poke the loop to
+    // refresh sooner.
     let mut interval = tokio::time::interval(POLL);
     loop {
-        let starting = session_up && state == State::Stopped;
+        let polling = session_up || state == State::Stuck;
         let new_state = tokio::select! {
-            _ = interval.tick() => if session_up { read_state(&system).await } else { state },
-            _ = tokio::time::sleep(STARTING_POLL), if starting => read_state(&system).await,
+            _ = interval.tick() => if polling { read_state(&system).await } else { state },
+            _ = tokio::time::sleep(STARTING_POLL), if state == State::Starting => read_state(&system).await,
             _ = poke.notified() => {
                 tokio::time::sleep(SETTLE).await;
                 read_state(&system).await
@@ -483,9 +500,14 @@ async fn main() {
             }
             Some(change) = session_changes.next() => {
                 session_up = gained_owner(&change);
-                if session_up { read_state(&system).await } else { State::Stopped }
+                let state = read_state(&system).await;
+                // Waydroid clears the container's session before the session
+                // manager drops its name, so one still there means the stop
+                // failed partway.
+                if !session_up && state != State::Stopped { State::Stuck } else { state }
             }
         };
+        let new_state = with_session(new_state, session_up);
         let new_apps = list_apps(&apps_dir);
         if new_state == state && new_apps == apps {
             continue;

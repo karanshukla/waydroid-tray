@@ -10,6 +10,8 @@ The icon is a monochrome Android head that follows your Plasma colour scheme, li
 | Filled, eyes closed | Frozen (no Android windows open, 0% CPU but still holding RAM) |
 | Filled, eyes open | Running |
 
+The outline also covers two in-between states, named in the menu header. **Starting** is a session on its way up. **Stuck** is Waydroid holding a leftover session after a stop that failed partway, which makes every new start fail with "Already tracking a session". In both, Start is disabled and Stop session (or a middle click) runs `waydroid session stop`, which clears a stuck session without root.
+
 Click it (left or right) for the menu: Start session, Stop session, Freeze / Unfreeze, Show full UI, and an **Apps** submenu built from the launchers Waydroid already generates in `~/.local/share/applications`. Hidden apps (`NoDisplay=true`) stay hidden, and the list picks up installs and removals on the next poll. Middle click starts or stops the session.
 
 Two toggles at the bottom of the menu, saved to `~/.config/waydroid-tray/config`:
