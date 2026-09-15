@@ -10,7 +10,14 @@ The icon is a monochrome Android head that follows your Plasma colour scheme, li
 | Filled, eyes closed | Frozen (no Android windows open, 0% CPU but still holding RAM) |
 | Filled, eyes open | Running |
 
-Click it (left or right) for the menu: Start session, Stop session, Show full UI, and an **Apps** submenu built from the launchers Waydroid already generates in `~/.local/share/applications`. Hidden apps (`NoDisplay=true`) stay hidden, and the list picks up installs and removals on the next poll.
+Click it (left or right) for the menu: Start session, Stop session, Freeze / Unfreeze, Show full UI, and an **Apps** submenu built from the launchers Waydroid already generates in `~/.local/share/applications`. Hidden apps (`NoDisplay=true`) stay hidden, and the list picks up installs and removals on the next poll. Middle click starts or stops the session.
+
+Two toggles at the bottom of the menu, saved to `~/.config/waydroid-tray/config`:
+
+- **Start session at login** runs `waydroid session start` when the tray starts, if no session is running. Starting the session brings the container service up on demand, so it can stay disabled at boot.
+- **Hide icon while stopped** marks the icon passive while the session is stopped, so Plasma moves it to the hidden icons until a session starts.
+
+If a Waydroid command fails, you get a desktop notification with the end of its error output.
 
 ## Install
 
@@ -22,6 +29,8 @@ waydroid-tray &       # start it now without logging out
 ./install.sh --uninstall
 ```
 
+Re-running `./install.sh` restarts a running tray on the new build, and `--uninstall` stops it.
+
 ## Why it doesn't use `waydroid status`
 
 This is the one non-obvious bit. Waydroid registers `waydroid-container.service` for D-Bus activation, so _any_ call addressed to `id.waydro.Container` starts the service. `waydroid status` does exactly that. Polling it every 5 seconds would quietly restart the container service you might have disabled at boot on purpose.
@@ -32,7 +41,16 @@ This is the one non-obvious bit. Waydroid registers `waydroid-container.service`
 
 The first version was Python + PySide6. It worked, but Qt's tray implementation reports `ItemIsMenu=false` and drops the click position, so a left click could never open the menu. [ksni](https://github.com/iovxw/ksni) talks StatusNotifierItem directly and supports opening the menu on left click, and the binary doesn't drag Qt in at runtime.
 
+## Running the tests
+
+```sh
+cargo install busd    # a D-Bus broker that needs no system config
+cargo test
+```
+
+The integration tests in `tests/harness.rs` run the real tray against private system and session buses, with mock Waydroid, notification and tray host services and a `waydroid` shim on `PATH`. No Waydroid, Plasma or root needed.
+
 ## Limits
 
-- Polls every 5s. Waydroid doesn't emit a signal when the session state changes, so there's nothing to subscribe to.
+- Session start and stop come from D-Bus name changes, so they show up straight away. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
 - Tested on Plasma 6 (Wayland) with Waydroid 1.6.3. Other StatusNotifierItem hosts should work but I haven't tried them.
