@@ -1,0 +1,17 @@
+[Unit]
+Description=Waydroid tray icon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/waydroid-tray
+Restart=on-failure
+RestartSec=2
+# Exit status 1 means another tray already holds the lock.
+RestartPreventExitStatus=1
+# The tray starts Waydroid sessions in their own process groups. Only stop the
+# tray itself, so a restart doesn't end the session.
+KillMode=process
+
+[Install]
+WantedBy=graphical-session.target

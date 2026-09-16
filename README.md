@@ -27,10 +27,9 @@ On x86_64 or arm64, this downloads the latest release binary. No Rust toolchain 
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/install.sh | sh
-waydroid-tray &       # start it now without logging out
 ```
 
-It installs to `~/.local/bin` and adds the icons, an autostart entry and a menu entry. To remove it:
+It installs to `~/.local/bin` and adds the icons, a menu entry, and a systemd user unit (`waydroid-tray.service`) that starts the tray with your desktop session and restarts it if it crashes. To remove it:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/install.sh | sh -s -- --uninstall
@@ -38,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/inst
 
 To build from source instead, run `./install.sh` from a checkout (needs a Rust toolchain). `./install.sh --uninstall` works there too.
 
-Re-running the installer restarts a running tray on the new build, and `--uninstall` stops it.
+Re-running the installer restarts the tray on the new build, and `--uninstall` stops it. Stopping or restarting the unit leaves a running Waydroid session alone. Quit tray stops it until your next login.
 
 ## Releasing
 

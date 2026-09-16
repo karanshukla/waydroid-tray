@@ -26,7 +26,7 @@ jobs:
             cargo build --release --locked --target "$arch-unknown-linux-musl"
             dir="dist/waydroid-tray"
             rm -rf "$dir" && mkdir -p "$dir"
-            cp -r "target/$arch-unknown-linux-musl/release/waydroid-tray" icons waydroid-tray.desktop install.sh "$dir"
+            cp -r "target/$arch-unknown-linux-musl/release/waydroid-tray" icons waydroid-tray.desktop waydroid-tray.service install.sh "$dir"
             tar -czf "dist/waydroid-tray-$arch-linux.tar.gz" -C dist waydroid-tray
           done
       - name: Publish
