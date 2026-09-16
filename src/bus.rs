@@ -2,9 +2,11 @@
 
 use std::collections::HashMap;
 
-use zbus::Connection;
 use zbus::fdo::{DBusProxy, NameOwnerChanged};
 use zbus::names::{BusName, OwnedUniqueName};
+use zbus::proxy::MethodFlags;
+use zbus::zvariant::OwnedObjectPath;
+use zbus::{Connection, Proxy};
 
 use crate::state::State;
 
@@ -12,6 +14,12 @@ pub const CONTAINER_NAME: &str = "id.waydro.Container";
 pub const SESSION_NAME: &str = "id.waydro.Session";
 const OBJECT_PATH: &str = "/ContainerManager";
 const INTERFACE: &str = "id.waydro.ContainerManager";
+/// The root service the container manager runs in. Stopping a session leaves
+/// it up, holding its memory, so the tray offers a way to stop it too.
+const CONTAINER_UNIT: &str = "waydroid-container.service";
+const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
+const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
 
 /// The container manager's unique bus name, if it's running. Asking the bus
 /// who owns a name never activates anything.
@@ -53,6 +61,23 @@ pub async fn call(system: &Connection, method: &str) -> zbus::Result<()> {
             .call_method(Some(owner), OBJECT_PATH, Some(INTERFACE), method, &())
             .await?;
     }
+    Ok(())
+}
+
+/// Asks systemd to stop the container service, which runs as root. Polkit
+/// checks the call, and `AllowInteractiveAuth` is what lets the desktop's
+/// authentication agent prompt for it: without the flag polkit refuses on the
+/// spot with "Interactive authentication required".
+pub async fn stop_container_service(system: &Connection) -> zbus::Result<()> {
+    let systemd = Proxy::new(system, SYSTEMD_NAME, SYSTEMD_PATH, SYSTEMD_MANAGER).await?;
+    // "replace" is systemd's usual mode: take over from any queued job for the unit.
+    let _job: Option<OwnedObjectPath> = systemd
+        .call_with_flags(
+            "StopUnit",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(CONTAINER_UNIT, "replace"),
+        )
+        .await?;
     Ok(())
 }
 

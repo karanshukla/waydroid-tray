@@ -12,11 +12,13 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use zbus::zvariant::{OwnedValue, Value};
+use zbus::message::{Flags, Header};
+use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{Connection, interface};
 
 const CONTAINER_NAME: &str = "id.waydro.Container";
 const SESSION_NAME: &str = "id.waydro.Session";
+const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
 /// Well under the tray's 5s poll, so passing means a signal did it.
 const QUICK: Duration = Duration::from_secs(2);
 
@@ -55,6 +57,12 @@ struct Mock {
     container_calls: Vec<&'static str>,
     /// Make `Freeze`/`Unfreeze` fail like an uninitialized Waydroid.
     container_fails: bool,
+    /// `(unit, mode)` for every `StopUnit` systemd was asked for.
+    stopped_units: Vec<(String, String)>,
+    /// Whether the last `StopUnit` let polkit prompt.
+    interactive_stop: bool,
+    /// Refuse `StopUnit` the way polkit does when the prompt is dismissed.
+    systemd_denies: bool,
     notifications: Vec<(String, String)>,
     tray_item: Option<String>,
 }
@@ -88,6 +96,27 @@ impl ContainerManager {
 
     fn unfreeze(&self) -> zbus::fdo::Result<()> {
         self.record("Unfreeze")
+    }
+}
+
+/// Enough of systemd's manager to see what the tray asks it to stop.
+struct Systemd(Shared);
+
+#[interface(name = "org.freedesktop.systemd1.Manager")]
+impl Systemd {
+    fn stop_unit(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        name: String,
+        mode: String,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        let mut mock = self.0.lock().unwrap();
+        mock.interactive_stop = header.primary().flags().contains(Flags::AllowInteractiveAuth);
+        mock.stopped_units.push((name, mode));
+        if mock.systemd_denies {
+            return Err(zbus::fdo::Error::AccessDenied("Interactive authentication required".into()));
+        }
+        Ok(OwnedObjectPath::try_from("/org/freedesktop/systemd1/job/1").unwrap())
     }
 }
 
@@ -164,6 +193,8 @@ impl Harness {
             .unwrap()
             .serve_at("/ContainerManager", ContainerManager(mock.clone()))
             .unwrap()
+            .serve_at("/org/freedesktop/systemd1", Systemd(mock.clone()))
+            .unwrap()
             .build()
             .await
             .unwrap();
@@ -176,6 +207,8 @@ impl Harness {
             .build()
             .await
             .unwrap();
+        // systemd is always up on a real box, unlike the container service.
+        system.request_name(SYSTEMD_NAME).await.unwrap();
         session.request_name("org.freedesktop.Notifications").await.unwrap();
         session.request_name("org.kde.StatusNotifierWatcher").await.unwrap();
         Harness { dir, processes, system_address, session_address, system, session, mock }
@@ -567,4 +600,46 @@ async fn middle_click_stops_a_running_session() {
     h.start_tray().await;
     h.middle_click().await;
     wait_for("session stop", QUICK, async || h.waydroid_log() == ["session stop"]).await;
+}
+
+// #7: stop the container service.
+
+#[tokio::test]
+async fn stop_container_service_is_offered_once_the_session_is_down() {
+    let mut h = Harness::new().await;
+    h.start_tray().await;
+    // Nothing to stop: the service isn't running either.
+    assert!(!h.menu_enabled("Stop container service").await);
+    h.start_session("RUNNING").await;
+    wait_for("Running", QUICK, async || h.icon().await == "waydroid-tray-running").await;
+    assert!(!h.menu_enabled("Stop container service").await);
+    // The service outlives the session, which is what the item is for.
+    h.stop_session().await;
+    wait_for("the item to enable", QUICK, async || h.menu_enabled("Stop container service").await).await;
+}
+
+#[tokio::test]
+async fn stop_container_service_stops_the_unit_through_systemd() {
+    let mut h = Harness::new().await;
+    h.start_container().await;
+    h.start_tray().await;
+    h.click("Stop container service").await;
+    wait_for("StopUnit", QUICK, async || !h.mock().stopped_units.is_empty()).await;
+    assert_eq!(h.mock().stopped_units, [("waydroid-container.service".into(), "replace".into())]);
+    // Without this flag polkit refuses outright instead of letting the agent prompt.
+    assert!(h.mock().interactive_stop);
+}
+
+#[tokio::test]
+async fn refused_container_service_stop_is_notified() {
+    let mut h = Harness::new().await;
+    h.start_container().await;
+    h.mock().systemd_denies = true;
+    h.start_tray().await;
+    h.click("Stop container service").await;
+    wait_for("a notification", QUICK, async || !h.mock().notifications.is_empty()).await;
+    let (summary, body) = h.mock().notifications[0].clone();
+    assert_eq!(summary, "Stop container service failed");
+    assert!(body.contains("authentication"), "{body}");
+    assert!(h.tray_running());
 }

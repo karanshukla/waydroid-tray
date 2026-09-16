@@ -68,6 +68,8 @@ async fn main() {
 
     let session_name = BusName::try_from(SESSION_NAME).expect("valid bus name");
     let mut session_up = session_dbus.name_has_owner(session_name).await.unwrap_or(false);
+    let container_name = BusName::try_from(CONTAINER_NAME).expect("valid bus name");
+    let mut container_up = system_dbus.name_has_owner(container_name).await.unwrap_or(false);
     let mut state = read_state(&system).await.with_session(session_up);
     if config.start_at_login && !session_up {
         spawn_waydroid(&["session", "start"], session.clone());
@@ -83,6 +85,7 @@ async fn main() {
         session,
         poke.clone(),
     );
+    tray.container_up = container_up;
     tray.set_apps(apps.clone());
     let handle = tray.spawn().await.expect("register the tray icon");
 
@@ -93,6 +96,7 @@ async fn main() {
     let mut interval = tokio::time::interval(POLL);
     loop {
         let polling = session_up || state == State::Stuck;
+        let was_container_up = container_up;
         let new_state = tokio::select! {
             _ = interval.tick() => if polling { read_state(&system).await } else { state },
             _ = tokio::time::sleep(STARTING_POLL), if state == State::Starting => read_state(&system).await,
@@ -101,7 +105,8 @@ async fn main() {
                 read_state(&system).await
             }
             Some(change) = container_changes.next() => {
-                if gained_owner(&change) { read_state(&system).await } else { State::Stopped }
+                container_up = gained_owner(&change);
+                if container_up { read_state(&system).await } else { State::Stopped }
             }
             Some(change) = session_changes.next() => {
                 session_up = gained_owner(&change);
@@ -114,15 +119,19 @@ async fn main() {
         };
         let new_state = new_state.with_session(session_up);
         let new_apps = list_apps(&apps_dir);
-        if new_state == state && new_apps == apps {
+        // The container service coming or going changes the menu even when the
+        // state doesn't: it's what "Stop container service" acts on.
+        if new_state == state && new_apps == apps && container_up == was_container_up {
             continue;
         }
         state = new_state;
         apps = new_apps;
         let apps_for_tray = apps.clone();
+        let container_up_now = container_up;
         handle
             .update(move |tray| {
                 tray.state = state;
+                tray.container_up = container_up_now;
                 tray.set_apps(apps_for_tray);
             })
             .await;

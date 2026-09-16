@@ -12,7 +12,9 @@ The icon is a monochrome Android head that follows your Plasma colour scheme, li
 
 The outline also covers two in-between states, named in the menu header. **Starting** is a session on its way up. **Stuck** is Waydroid holding a leftover session after a stop that failed partway, which makes every new start fail with "Already tracking a session". In both, Start is disabled and Stop session (or a middle click) runs `waydroid session stop`, which clears a stuck session without root.
 
-Click it (left or right) for the menu: Start session, Stop session, Freeze / Unfreeze, Show full UI, and an **Apps** submenu built from the launchers Waydroid already generates in `~/.local/share/applications`. Hidden apps (`NoDisplay=true`) stay hidden, and the list picks up installs and removals on the next poll. Middle click starts or stops the session.
+Click it (left or right) for the menu: Start session, Stop session, Stop container service, Freeze / Unfreeze, Show full UI, and an **Apps** submenu built from the launchers Waydroid already generates in `~/.local/share/applications`. Hidden apps (`NoDisplay=true`) stay hidden, and the list picks up installs and removals on the next poll. Middle click starts or stops the session.
+
+**Stop container service** is enabled once the session is stopped and `waydroid-container.service` is still up. Stopping a session doesn't stop that service, and starting one D-Bus-activates it even when it's disabled at boot, so it sits there as root holding its memory until something stops it. The tray asks systemd to stop it over D-Bus, which polkit checks against `org.freedesktop.systemd1.manage-units`, so your desktop's authentication agent prompts for an admin password and remembers it for a few minutes. The tray never runs as root itself, and a dismissed prompt just gets you a notification.
 
 Two toggles at the bottom of the menu, saved to `~/.config/waydroid-tray/config`:
 
