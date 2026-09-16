@@ -1,7 +1,14 @@
 [package]
 name = "waydroid-tray"
-version = "0.2.0"
+version = "0.1.1"
 edition = "2024"
+description = "KDE Plasma tray icon for Waydroid: session status, start/stop, freeze, and an app launcher"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/karanshukla/waydroid-tray"
+readme = "README.md"
+keywords = ["waydroid", "tray", "kde", "plasma", "android"]
+categories = ["command-line-utilities", "gui"]
+exclude = [".github/"]
 
 [dependencies]
 futures-util = { version = "0.3", default-features = false }

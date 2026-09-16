@@ -39,11 +39,13 @@ curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/inst
 
 To build from source instead, run `./install.sh` from a checkout (needs a Rust toolchain). `./install.sh --uninstall` works there too.
 
+It's also [on crates.io](https://crates.io/crates/waydroid-tray), but `cargo install waydroid-tray` only gets you the binary, in `~/.cargo/bin`. The icons, systemd unit and menu entry come from `install.sh`, so without it the tray shows a generic icon and you start it yourself.
+
 Re-running the installer restarts the tray on the new build, and `--uninstall` stops it. Stopping or restarting the unit leaves a running Waydroid session alone. Quit tray stops it until your next login.
 
 ## Releasing
 
-Bump `version` in `Cargo.toml`, then push a matching tag (`git tag v0.2.0 && git push origin v0.2.0`). The release workflow builds static x86_64 and arm64 binaries and attaches them to a GitHub release. The install script picks up the newest one.
+Bump `version` in `Cargo.toml`, then push a matching tag (`git tag v0.1.1 && git push origin v0.1.1`). The release workflow builds static x86_64 and arm64 binaries and attaches them to a GitHub release. The install script picks up the newest one. `cargo publish` puts the same version on crates.io.
 
 ## Why it doesn't use `waydroid status`
 
@@ -69,3 +71,7 @@ The integration tests in `tests/harness.rs` run the real tray against private sy
 - Session start and stop come from D-Bus name changes. A stop shows up straight away. A start takes a moment longer, because Waydroid claims its session name before the container has a session to report, so the tray re-checks every 0.5s until it does. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
 - If no session is running, `app launch` and `show-full-ui` start one and run it in the foreground. Waydroid exits 0 when that start fails, so those failures don't get a notification. `session start` does, because a real start never exits within 5s.
 - Tested on Plasma 6 (Wayland) with Waydroid 1.6.3. Other StatusNotifierItem hosts should work but I haven't tried them.
+
+## License
+
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option.
