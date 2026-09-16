@@ -23,15 +23,26 @@ If a Waydroid command fails, you get a desktop notification with the end of its 
 
 ## Install
 
-Needs a Rust toolchain.
+On x86_64 or arm64, this downloads the latest release binary. No Rust toolchain needed:
 
 ```sh
-./install.sh          # builds, installs to ~/.local/bin, adds icons + autostart + menu entry
+curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/install.sh | sh
 waydroid-tray &       # start it now without logging out
-./install.sh --uninstall
 ```
 
-Re-running `./install.sh` restarts a running tray on the new build, and `--uninstall` stops it.
+It installs to `~/.local/bin` and adds the icons, an autostart entry and a menu entry. To remove it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/install.sh | sh -s -- --uninstall
+```
+
+To build from source instead, run `./install.sh` from a checkout (needs a Rust toolchain). `./install.sh --uninstall` works there too.
+
+Re-running the installer restarts a running tray on the new build, and `--uninstall` stops it.
+
+## Releasing
+
+Bump `version` in `Cargo.toml`, then push a matching tag (`git tag v0.2.0 && git push origin v0.2.0`). The release workflow builds static x86_64 and arm64 binaries and attaches them to a GitHub release. The install script picks up the newest one.
 
 ## Why it doesn't use `waydroid status`
 

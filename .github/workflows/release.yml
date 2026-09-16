@@ -1,0 +1,35 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish a release with prebuilt binaries.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # Static musl binaries run on any distro. The dependencies are pure
+      # Rust, so rust-lld can link the arm64 one without a cross toolchain.
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - name: Build and package
+        run: |
+          for arch in x86_64 aarch64; do
+            cargo build --release --locked --target "$arch-unknown-linux-musl"
+            dir="dist/waydroid-tray"
+            rm -rf "$dir" && mkdir -p "$dir"
+            cp -r "target/$arch-unknown-linux-musl/release/waydroid-tray" icons waydroid-tray.desktop install.sh "$dir"
+            tar -czf "dist/waydroid-tray-$arch-linux.tar.gz" -C dist waydroid-tray
+          done
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes dist/*.tar.gz
