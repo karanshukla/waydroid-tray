@@ -1,6 +1,6 @@
 #!/bin/sh
-# Install waydroid-tray for the current user (binary, icons, autostart + app
-# menu entry). Run with --uninstall to remove it again.
+# Install waydroid-tray for the current user (binary, icons, systemd user unit
+# + app menu entry). Run with --uninstall to remove it again.
 #
 # From a checkout it builds from source. Anywhere else, e.g. piped from curl,
 # it downloads the latest release:
@@ -11,19 +11,24 @@ repo="karanshukla/waydroid-tray"
 here=$(cd "$(dirname "$0")" && pwd)
 bin="$HOME/.local/bin/waydroid-tray"
 icons="$HOME/.local/share/icons/hicolor/scalable/status"
-autostart="$HOME/.config/autostart/waydroid-tray.desktop"
+unit="$HOME/.config/systemd/user/waydroid-tray.service"
 launcher="$HOME/.local/share/applications/waydroid-tray.desktop"
+# Older versions started the tray from here instead of a unit.
+autostart="$HOME/.config/autostart/waydroid-tray.desktop"
 
-# Only this user's trays; exits non-zero if none was running.
+# Stops the unit and any tray started outside it, e.g. by an older version.
 stop_tray() {
-    pkill -x -u "$(id -u)" waydroid-tray || return 1
+    systemctl --user stop waydroid-tray 2> /dev/null || true
+    pkill -x -u "$(id -u)" waydroid-tray || return 0
     # Wait for it to exit and drop its lock.
     while pgrep -x -u "$(id -u)" waydroid-tray > /dev/null; do sleep 0.1; done
 }
 
 if [ "${1:-}" = "--uninstall" ]; then
-    stop_tray || true
-    rm -f "$bin" "$autostart" "$launcher" "$icons"/waydroid-tray-*.svg
+    systemctl --user disable waydroid-tray 2> /dev/null || true
+    stop_tray
+    rm -f "$bin" "$unit" "$autostart" "$launcher" "$icons"/waydroid-tray-*.svg
+    systemctl --user daemon-reload 2> /dev/null || true
     echo "Removed waydroid-tray."
     exit 0
 fi
@@ -53,14 +58,17 @@ fi
 # install(1) replaces the file in place, including an old symlink.
 install -Dm755 "$built" "$bin"
 install -Dm644 -t "$icons" "$here"/icons/waydroid-tray-*.svg
-mkdir -p "$(dirname "$autostart")" "$(dirname "$launcher")"
-for target in "$autostart" "$launcher"; do
-    sed "s|@BIN@|$bin|" "$here/waydroid-tray.desktop" > "$target"
-done
-# Restart a running tray so the new binary takes effect.
-if stop_tray; then
-    nohup "$bin" > /dev/null 2>&1 &
-    echo "Installed and restarted the running tray."
+install -Dm644 "$here/waydroid-tray.service" "$unit"
+install -Dm644 "$here/waydroid-tray.desktop" "$launcher"
+rm -f "$autostart"
+
+systemctl --user daemon-reload
+systemctl --user enable waydroid-tray
+stop_tray
+# Outside a desktop session (e.g. over ssh) there's no tray to show it in.
+if systemctl --user is-active --quiet graphical-session.target; then
+    systemctl --user start waydroid-tray
+    echo "Installed and started the tray."
 else
-    echo "Installed. Start it now with: waydroid-tray &"
+    echo "Installed. The tray starts with your next desktop session."
 fi

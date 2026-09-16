@@ -25,3 +25,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: shellcheck install.sh
+      # verify wants ExecStart to exist, so stand in for the installed binary.
+      - run: install -D /bin/true ~/.local/bin/waydroid-tray
+      - run: systemd-analyze --user verify waydroid-tray.service
