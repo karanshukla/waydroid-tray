@@ -16,6 +16,8 @@ use crate::{bus, cli, notify};
 
 pub struct WaydroidTray {
     pub state: State,
+    /// Whether the container service is up, which it can be with no session.
+    pub container_up: bool,
     apps: Vec<(AppEntry, Vec<u8>)>,
     icon_theme_path: String,
     config: Config,
@@ -37,7 +39,17 @@ impl WaydroidTray {
         session: Connection,
         poke: Arc<Notify>,
     ) -> Self {
-        Self { state, apps: Vec::new(), icon_theme_path, config, config_path, system, session, poke }
+        Self {
+            state,
+            container_up: false,
+            apps: Vec::new(),
+            icon_theme_path,
+            config,
+            config_path,
+            system,
+            session,
+            poke,
+        }
     }
 
     fn run(&self, args: &[&str]) {
@@ -50,6 +62,16 @@ impl WaydroidTray {
         tokio::spawn(async move {
             if let Err(err) = bus::call(&system, method).await {
                 notify::failure(&session, &format!("{method} failed"), &err.to_string()).await;
+            }
+            poke.notify_one();
+        });
+    }
+
+    fn stop_container_service(&self) {
+        let (system, session, poke) = (self.system.clone(), self.session.clone(), self.poke.clone());
+        tokio::spawn(async move {
+            if let Err(err) = bus::stop_container_service(&system).await {
+                notify::failure(&session, "Stop container service failed", &err.to_string()).await;
             }
             poke.notify_one();
         });
@@ -157,6 +179,14 @@ impl ksni::Tray for WaydroidTray {
                 label: "Stop session".into(),
                 enabled: !stopped,
                 activate: Box::new(|tray: &mut Self| tray.run(&["session", "stop"])),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Stop container service".into(),
+                // Only once the session is down: the service is what runs it.
+                enabled: stopped && self.container_up,
+                activate: Box::new(|tray: &mut Self| tray.stop_container_service()),
                 ..Default::default()
             }
             .into(),
