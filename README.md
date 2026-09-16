@@ -10,6 +10,8 @@ The icon is a monochrome Android head that follows your Plasma colour scheme, li
 | Filled, eyes closed | Frozen (no Android windows open, 0% CPU but still holding RAM) |
 | Filled, eyes open | Running |
 
+The outline also covers two in-between states, named in the menu header. **Starting** is a session on its way up. **Stuck** is Waydroid holding a leftover session after a stop that failed partway, which makes every new start fail with "Already tracking a session". In both, Start is disabled and Stop session (or a middle click) runs `waydroid session stop`, which clears a stuck session without root.
+
 Click it (left or right) for the menu: Start session, Stop session, Freeze / Unfreeze, Show full UI, and an **Apps** submenu built from the launchers Waydroid already generates in `~/.local/share/applications`. Hidden apps (`NoDisplay=true`) stay hidden, and the list picks up installs and removals on the next poll. Middle click starts or stops the session.
 
 Two toggles at the bottom of the menu, saved to `~/.config/waydroid-tray/config`:
@@ -52,5 +54,6 @@ The integration tests in `tests/harness.rs` run the real tray against private sy
 
 ## Limits
 
-- Session start and stop come from D-Bus name changes, so they show up straight away. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
+- Session start and stop come from D-Bus name changes. A stop shows up straight away. A start takes a moment longer, because Waydroid claims its session name before the container has a session to report, so the tray re-checks every 0.5s until it does. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
+- If no session is running, `app launch` and `show-full-ui` start one and run it in the foreground. Waydroid exits 0 when that start fails, so those failures don't get a notification. `session start` does, because a real start never exits within 5s.
 - Tested on Plasma 6 (Wayland) with Waydroid 1.6.3. Other StatusNotifierItem hosts should work but I haven't tried them.
