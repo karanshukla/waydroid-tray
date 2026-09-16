@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # The integration tests run their own buses with busd. The cache keeps
+      # ~/.cargo/bin, so this only builds it on a cache miss.
+      - run: command -v busd || cargo install busd --locked
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  install-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck install.sh
