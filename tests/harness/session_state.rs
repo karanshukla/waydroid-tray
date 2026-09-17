@@ -8,9 +8,9 @@ use crate::harness::{Harness, QUICK, SESSION_NAME, wait_for};
 async fn session_start_is_picked_up_without_polling() {
     let mut h = Harness::new().await;
     h.start_tray().await;
-    assert_eq!(h.icon().await, "waydroid-tray-stopped");
+    assert_eq!(h.icon().await, "waydroid-tray-stopped-symbolic");
     h.start_session("RUNNING").await;
-    wait_for("Running", QUICK, async || h.icon().await == "waydroid-tray-running").await;
+    wait_for("Running", QUICK, async || h.icon().await == "waydroid-tray-running-symbolic").await;
 }
 
 #[tokio::test]
@@ -18,9 +18,9 @@ async fn session_stop_is_immediate() {
     let mut h = Harness::new().await;
     h.start_session("RUNNING").await;
     h.start_tray().await;
-    assert_eq!(h.icon().await, "waydroid-tray-running");
+    assert_eq!(h.icon().await, "waydroid-tray-running-symbolic");
     h.stop_session().await;
-    wait_for("Stopped", QUICK, async || h.icon().await == "waydroid-tray-stopped").await;
+    wait_for("Stopped", QUICK, async || h.icon().await == "waydroid-tray-stopped-symbolic").await;
 }
 
 #[tokio::test]
@@ -58,7 +58,7 @@ async fn frozen_session_shows_frozen() {
     let mut h = Harness::new().await;
     h.start_session("FROZEN").await;
     h.start_tray().await;
-    assert_eq!(h.icon().await, "waydroid-tray-frozen");
+    assert_eq!(h.icon().await, "waydroid-tray-frozen-symbolic");
 }
 
 #[tokio::test]

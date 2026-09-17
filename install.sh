@@ -1,6 +1,6 @@
 #!/bin/sh
-# Install waydroid-tray for the current user (binary, icons, systemd user unit
-# + app menu entry). Run with --uninstall to remove it again.
+# Install waydroid-tray for the current user (binary, icons, systemd user unit,
+# app menu and autostart entries). Run with --uninstall to remove it again.
 #
 # From a checkout it builds from source. Anywhere else, e.g. piped from curl,
 # it downloads the latest release:
@@ -13,7 +13,8 @@ bin="$HOME/.local/bin/waydroid-tray"
 icons="$HOME/.local/share/icons/hicolor/scalable/status"
 unit="$HOME/.config/systemd/user/waydroid-tray.service"
 launcher="$HOME/.local/share/applications/waydroid-tray.desktop"
-# Older versions started the tray from here instead of a unit.
+# The unit starts with graphical-session.target, which many desktops never
+# reach. Their autostart runs the launcher, which starts the unit instead.
 autostart="$HOME/.config/autostart/waydroid-tray.desktop"
 
 # Stops the unit and any tray started outside it, e.g. by an older version.
@@ -57,16 +58,20 @@ fi
 
 # install(1) replaces the file in place, including an old symlink.
 install -Dm755 "$built" "$bin"
+# Drops icons an older version named differently.
+rm -f "$icons"/waydroid-tray-*.svg
 install -Dm644 -t "$icons" "$here"/icons/waydroid-tray-*.svg
 install -Dm644 "$here/waydroid-tray.service" "$unit"
 install -Dm644 "$here/waydroid-tray.desktop" "$launcher"
-rm -f "$autostart"
+install -Dm644 "$here/waydroid-tray.desktop" "$autostart"
 
 systemctl --user daemon-reload
 systemctl --user enable waydroid-tray
 stop_tray
 # Outside a desktop session (e.g. over ssh) there's no tray to show it in.
-if systemctl --user is-active --quiet graphical-session.target; then
+if systemctl --user is-active --quiet graphical-session.target || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    # Waydroid needs it, and not every desktop passes it on to systemd.
+    [ -n "${WAYLAND_DISPLAY:-}" ] && systemctl --user import-environment WAYLAND_DISPLAY
     systemctl --user start waydroid-tray
     echo "Installed and started the tray."
 else

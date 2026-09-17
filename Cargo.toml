@@ -2,7 +2,7 @@
 name = "waydroid-tray"
 version = "0.1.1"
 edition = "2024"
-description = "KDE Plasma tray icon for Waydroid: session status, start/stop, freeze, and an app launcher"
+description = "System tray icon for Waydroid: session status, start/stop, freeze, and an app launcher"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/karanshukla/waydroid-tray"
 readme = "README.md"
