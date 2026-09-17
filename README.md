@@ -64,7 +64,7 @@ cargo install busd    # a D-Bus broker that needs no system config
 cargo test
 ```
 
-The integration tests in `tests/harness.rs` run the real tray against private system and session buses, with mock Waydroid, notification and tray host services and a `waydroid` shim on `PATH`. No Waydroid, Plasma or root needed.
+The integration tests in `tests/harness/` run the real tray against private system and session buses, with mock Waydroid, notification and tray host services and a `waydroid` shim on `PATH`. No Waydroid, Plasma or root needed.
 
 ## Limits
 
