@@ -9,7 +9,7 @@ async fn stop_container_service_is_offered_once_the_session_is_down() {
     // Nothing to stop: the service isn't running either.
     assert!(!h.menu_enabled("Stop container service").await);
     h.start_session("RUNNING").await;
-    wait_for("Running", QUICK, async || h.icon().await == "waydroid-tray-running").await;
+    wait_for("Running", QUICK, async || h.icon().await == "waydroid-tray-running-symbolic").await;
     assert!(!h.menu_enabled("Stop container service").await);
     // The service outlives the session, which is what the item is for.
     h.stop_session().await;

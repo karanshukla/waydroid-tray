@@ -26,9 +26,9 @@ impl State {
 
     pub fn icon(self) -> &'static str {
         match self {
-            State::Stopped | State::Starting | State::Stuck => "waydroid-tray-stopped",
-            State::Running => "waydroid-tray-running",
-            State::Frozen => "waydroid-tray-frozen",
+            State::Stopped | State::Starting | State::Stuck => "waydroid-tray-stopped-symbolic",
+            State::Running => "waydroid-tray-running-symbolic",
+            State::Frozen => "waydroid-tray-frozen-symbolic",
         }
     }
 
