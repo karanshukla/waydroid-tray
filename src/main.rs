@@ -121,10 +121,6 @@ async fn main() {
     tray.set_apps(apps.clone());
     let handle = tray.spawn().await.expect("register the tray icon");
 
-    // Session start and stop show up as the session manager's bus name coming
-    // and going. Freezing doesn't, so poll for that while a session exists,
-    // and for a stuck one getting cleared. Menu actions poke the loop to
-    // refresh sooner.
     let mut interval = tokio::time::interval(POLL);
     let idle_after = idle_timeout();
     let mut frozen_since: Option<Instant> = None;
@@ -133,9 +129,6 @@ async fn main() {
         let polling = session_up || state == State::Stuck;
         let was_container_up = container_up;
         let armed = auto_stop.load(Ordering::Relaxed);
-        // Turning the toggle on starts the clock from now, rather than
-        // stopping a session that happens to have been frozen for longer
-        // than the timeout already.
         if armed && !was_armed {
             frozen_since = frozen_since.map(|_| Instant::now());
         }
@@ -146,8 +139,6 @@ async fn main() {
             _ = tokio::time::sleep(STARTING_POLL), if state == State::Starting => read_state(&system).await,
             _ = tokio::time::sleep(idle_left.unwrap_or_default()), if armed && idle_left.is_some() => {
                 spawn_waydroid(&["session", "stop"], session.clone());
-                // Cleared so a stop that doesn't take waits out the timeout
-                // again below, rather than firing on every pass.
                 frozen_since = None;
                 state
             }
@@ -162,9 +153,6 @@ async fn main() {
             Some(change) = session_changes.next() => {
                 session_up = gained_owner(&change);
                 let state = read_state(&system).await;
-                // Waydroid clears the container's session before the session
-                // manager drops its name, so one still there means the stop
-                // failed partway.
                 if !session_up && state != State::Stopped { State::Stuck } else { state }
             }
         };
@@ -174,8 +162,6 @@ async fn main() {
             _ => None,
         };
         let new_apps = list_apps(&apps_dir);
-        // The container service coming or going changes the menu even when the
-        // state doesn't: it's what "Stop container service" acts on.
         if new_state == state && new_apps == apps && container_up == was_container_up {
             continue;
         }

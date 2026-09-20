@@ -6,7 +6,6 @@ use crate::harness::{Harness, QUICK, wait_for};
 async fn stop_container_service_is_offered_once_the_session_is_down() {
     let mut h = Harness::new().await;
     h.start_tray().await;
-    // Nothing to stop: the service isn't running either.
     assert!(!h.menu_enabled("Stop container service").await);
     h.start_session("RUNNING").await;
     wait_for("Running", QUICK, async || {
@@ -14,7 +13,6 @@ async fn stop_container_service_is_offered_once_the_session_is_down() {
     })
     .await;
     assert!(!h.menu_enabled("Stop container service").await);
-    // The service outlives the session, which is what the item is for.
     h.stop_session().await;
     wait_for("the item to enable", QUICK, async || {
         h.menu_enabled("Stop container service").await
@@ -36,7 +34,6 @@ async fn stop_container_service_stops_the_unit_through_systemd() {
         h.mock().stopped_units,
         [("waydroid-container.service".into(), "replace".into())]
     );
-    // Without this flag polkit refuses outright instead of letting the agent prompt.
     assert!(h.mock().interactive_stop);
 }
 

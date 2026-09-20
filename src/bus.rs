@@ -20,6 +20,8 @@ const CONTAINER_UNIT: &str = "waydroid-container.service";
 const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
 const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
 const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
+/// systemd's usual job mode: take over from any job already queued for the unit.
+const REPLACE_QUEUED_JOB: &str = "replace";
 
 /// The container manager's unique bus name, if it's running. Asking the bus
 /// who owns a name never activates anything.
@@ -31,10 +33,6 @@ async fn container_owner(system: &Connection) -> Option<OwnedUniqueName> {
 
 /// Reads the session state without ever starting the container service.
 pub async fn read_state(system: &Connection) -> State {
-    // Only talk to the container manager if it already owns its name, and
-    // then via its unique name. Addressing the well-known name directly (like
-    // `waydroid status` does) triggers D-Bus activation, which would start
-    // waydroid-container.service on every poll.
     let Some(owner) = container_owner(system).await else {
         return State::Stopped;
     };
@@ -70,12 +68,11 @@ pub async fn call(system: &Connection, method: &str) -> zbus::Result<()> {
 /// spot with "Interactive authentication required".
 pub async fn stop_container_service(system: &Connection) -> zbus::Result<()> {
     let systemd = Proxy::new(system, SYSTEMD_NAME, SYSTEMD_PATH, SYSTEMD_MANAGER).await?;
-    // "replace" is systemd's usual mode: take over from any queued job for the unit.
     let _job: Option<OwnedObjectPath> = systemd
         .call_with_flags(
             "StopUnit",
             MethodFlags::AllowInteractiveAuth.into(),
-            &(CONTAINER_UNIT, "replace"),
+            &(CONTAINER_UNIT, REPLACE_QUEUED_JOB),
         )
         .await?;
     Ok(())

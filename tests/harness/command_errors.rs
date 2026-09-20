@@ -4,6 +4,10 @@ use std::time::Duration;
 
 use crate::harness::{Harness, QUICK, wait_for};
 
+/// Longer than the tray's 5s grace period for `session start`, after which an
+/// exit is a real failure rather than a session that simply ended.
+const PAST_START_GRACE: Duration = Duration::from_secs(6);
+
 #[tokio::test]
 async fn failed_command_is_notified_with_stderr() {
     let mut h = Harness::new().await;
@@ -54,8 +58,7 @@ async fn lasting_session_start_is_not_notified() {
         h.waydroid_log() == ["session start"]
     })
     .await;
-    // Past the tray's 5s grace period.
-    tokio::time::sleep(Duration::from_secs(6)).await;
+    tokio::time::sleep(PAST_START_GRACE).await;
     assert!(
         h.mock().notifications.is_empty(),
         "{:?}",

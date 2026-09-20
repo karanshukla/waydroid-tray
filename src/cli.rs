@@ -21,8 +21,7 @@ const ERROR_LINES: usize = 5;
 pub fn spawn_waydroid(args: &[&str], session: Connection) {
     let command = format!("waydroid {}", args.join(" "));
     let starts_session = args == ["session", "start"];
-    // A file rather than a pipe: the session outlives `session start`'s grace
-    // period, and would get EPIPE writing to a pipe after the tray quits.
+    // A file, not a pipe: a session outliving the tray would get EPIPE writing to one.
     let stderr = scratch_file();
     let child = Command::new("waydroid")
         .args(args)
@@ -43,11 +42,7 @@ pub fn spawn_waydroid(args: &[&str], session: Connection) {
             Err(err) => return notify::failure(&session, &summary, &err.to_string()).await,
             Ok(mut child) if starts_session => {
                 match tokio::time::timeout(START_GRACE, child.wait()).await {
-                    // Still going, so the session started. Reap it when it ends.
                     Err(_) => return drop(child.wait().await),
-                    // A started session doesn't return, so exiting this soon is
-                    // a failure even with status 0, which is what Waydroid exits
-                    // with when the container isn't listening.
                     Ok(status) => status,
                 }
             }
