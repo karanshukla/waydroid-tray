@@ -44,6 +44,38 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// Overrides `IDLE_TIMEOUT`, in seconds. The tests can't wait half an hour.
 const IDLE_TIMEOUT_VAR: &str = "WAYDROID_TRAY_IDLE_SECS";
 
+const HELP: &str = concat!(
+    env!("CARGO_PKG_NAME"),
+    " ",
+    env!("CARGO_PKG_VERSION"),
+    "\n",
+    env!("CARGO_PKG_DESCRIPTION"),
+    "\n\nUsage: waydroid-tray [OPTIONS]\n\n",
+    "Options:\n",
+    "  -h, --help     Print this help\n",
+    "  -V, --version  Print the version\n",
+    "\nWith no options it registers the tray icon and runs until it's quit.",
+);
+
+/// Answers `--version` and `--help` before anything else, so they work with a
+/// tray already holding the lock and with no bus to talk to. Unrecognised
+/// arguments are ignored, the way they were before there were any.
+fn print_flags_and_exit() {
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-V" | "--version" => {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+            "-h" | "--help" => {
+                println!("{HELP}");
+                std::process::exit(0);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn idle_timeout() -> Duration {
     std::env::var(IDLE_TIMEOUT_VAR)
         .ok()
@@ -53,6 +85,7 @@ fn idle_timeout() -> Duration {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    print_flags_and_exit();
     let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is set"));
     let runtime =
         std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
