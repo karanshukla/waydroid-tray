@@ -8,6 +8,7 @@ mod mock;
 mod auto_stop;
 mod command_errors;
 mod container_service;
+mod flags;
 mod freeze;
 mod hide_icon;
 mod middle_click;
