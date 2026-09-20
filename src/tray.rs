@@ -1,7 +1,6 @@
 //! The tray icon and its menu.
 
 use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use ksni::ToolTip;
@@ -10,7 +9,7 @@ use tokio::sync::Notify;
 use zbus::Connection;
 
 use crate::apps::AppEntry;
-use crate::config::Config;
+use crate::config::Settings;
 use crate::state::State;
 use crate::{bus, cli, notify};
 
@@ -20,8 +19,7 @@ pub struct WaydroidTray {
     pub container_up: bool,
     apps: Vec<(AppEntry, Vec<u8>)>,
     icon_theme_path: String,
-    config: Config,
-    config_path: PathBuf,
+    settings: Settings,
     system: Connection,
     session: Connection,
     poke: Arc<Notify>,
@@ -33,8 +31,7 @@ impl WaydroidTray {
     pub fn new(
         state: State,
         icon_theme_path: String,
-        config: Config,
-        config_path: PathBuf,
+        settings: Settings,
         system: Connection,
         session: Connection,
         poke: Arc<Notify>,
@@ -44,8 +41,7 @@ impl WaydroidTray {
             container_up: false,
             apps: Vec::new(),
             icon_theme_path,
-            config,
-            config_path,
+            settings,
             system,
             session,
             poke,
@@ -79,12 +75,6 @@ impl WaydroidTray {
         });
     }
 
-    fn save_config(&self) {
-        if let Err(err) = self.config.save(&self.config_path) {
-            eprintln!("failed to save {}: {err}", self.config_path.display());
-        }
-    }
-
     pub fn set_apps(&mut self, apps: Vec<AppEntry>) {
         self.apps = apps
             .into_iter()
@@ -109,7 +99,7 @@ impl ksni::Tray for WaydroidTray {
 
     fn status(&self) -> ksni::Status {
         // Plasma tucks passive items away in the hidden icons.
-        if self.config.hide_when_stopped && self.state == State::Stopped {
+        if self.settings.config.hide_when_stopped && self.state == State::Stopped {
             ksni::Status::Passive
         } else {
             ksni::Status::Active
@@ -219,20 +209,30 @@ impl ksni::Tray for WaydroidTray {
             MenuItem::Separator,
             CheckmarkItem {
                 label: "Start session at login".into(),
-                checked: self.config.start_at_login,
+                checked: self.settings.config.start_at_login,
                 activate: Box::new(|tray: &mut Self| {
-                    tray.config.start_at_login ^= true;
-                    tray.save_config();
+                    tray.settings.toggle(|config| &mut config.start_at_login);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            CheckmarkItem {
+                label: "Stop session after 30 min idle".into(),
+                checked: self.settings.config.auto_stop_when_idle,
+                activate: Box::new(|tray: &mut Self| {
+                    tray.settings
+                        .toggle(|config| &mut config.auto_stop_when_idle);
+                    // Let the main loop pick the change up now, not on its next poll.
+                    tray.poke.notify_one();
                 }),
                 ..Default::default()
             }
             .into(),
             CheckmarkItem {
                 label: "Hide icon while stopped".into(),
-                checked: self.config.hide_when_stopped,
+                checked: self.settings.config.hide_when_stopped,
                 activate: Box::new(|tray: &mut Self| {
-                    tray.config.hide_when_stopped ^= true;
-                    tray.save_config();
+                    tray.settings.toggle(|config| &mut config.hide_when_stopped);
                 }),
                 ..Default::default()
             }

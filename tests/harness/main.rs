@@ -5,6 +5,7 @@
 mod harness;
 mod mock;
 
+mod auto_stop;
 mod command_errors;
 mod container_service;
 mod freeze;
