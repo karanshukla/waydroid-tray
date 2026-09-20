@@ -3,11 +3,14 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub struct Config {
     pub start_at_login: bool,
     pub hide_when_stopped: bool,
+    pub auto_stop_when_idle: bool,
 }
 
 impl Config {
@@ -32,8 +35,8 @@ impl Config {
         fs::write(
             path,
             format!(
-                "start_at_login={}\nhide_when_stopped={}\n",
-                self.start_at_login, self.hide_when_stopped
+                "start_at_login={}\nhide_when_stopped={}\nauto_stop_when_idle={}\n",
+                self.start_at_login, self.hide_when_stopped, self.auto_stop_when_idle
             ),
         )
     }
@@ -46,10 +49,46 @@ impl Config {
             match key.trim() {
                 "start_at_login" => config.start_at_login = value,
                 "hide_when_stopped" => config.hide_when_stopped = value,
+                "auto_stop_when_idle" => config.auto_stop_when_idle = value,
                 _ => {}
             }
         }
         config
+    }
+}
+
+/// The config, where it lives, and a shared copy of the one flag the main
+/// loop also reads. Toggling through here keeps all three in step.
+pub struct Settings {
+    pub config: Config,
+    path: PathBuf,
+    auto_stop: Arc<AtomicBool>,
+}
+
+impl Settings {
+    pub fn new(config: Config, path: PathBuf) -> Self {
+        let auto_stop = Arc::new(AtomicBool::new(config.auto_stop_when_idle));
+        Self {
+            config,
+            path,
+            auto_stop,
+        }
+    }
+
+    /// For the main loop, which owns the idle timer.
+    pub fn auto_stop(&self) -> Arc<AtomicBool> {
+        self.auto_stop.clone()
+    }
+
+    /// Flips one flag and writes the file back. A failed write is only worth
+    /// a log line: the setting still applies until the tray restarts.
+    pub fn toggle(&mut self, field: impl Fn(&mut Config) -> &mut bool) {
+        *field(&mut self.config) ^= true;
+        self.auto_stop
+            .store(self.config.auto_stop_when_idle, Ordering::Relaxed);
+        if let Err(err) = self.config.save(&self.path) {
+            eprintln!("failed to save {}: {err}", self.path.display());
+        }
     }
 }
 
@@ -64,6 +103,7 @@ mod tests {
         let config = Config {
             start_at_login: true,
             hide_when_stopped: false,
+            auto_stop_when_idle: true,
         };
         config.save(&path).unwrap();
         assert_eq!(Config::load(&path), config);
@@ -86,8 +126,31 @@ mod tests {
             config,
             Config {
                 start_at_login: true,
-                hide_when_stopped: false
+                hide_when_stopped: false,
+                auto_stop_when_idle: false
             }
         );
+    }
+
+    #[test]
+    fn toggle_writes_through_and_publishes_auto_stop() {
+        let path = std::env::temp_dir().join(format!(
+            "waydroid-tray-toggle-{}/config",
+            std::process::id()
+        ));
+        let mut settings = Settings::new(Config::default(), path.clone());
+        let auto_stop = settings.auto_stop();
+        settings.toggle(|config| &mut config.auto_stop_when_idle);
+        assert!(auto_stop.load(Ordering::Relaxed));
+        assert_eq!(
+            Config::load(&path),
+            Config {
+                auto_stop_when_idle: true,
+                ..Config::default()
+            }
+        );
+        settings.toggle(|config| &mut config.auto_stop_when_idle);
+        assert!(!auto_stop.load(Ordering::Relaxed));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

@@ -11,7 +11,8 @@ mod tray;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use ksni::TrayMethods;
@@ -23,7 +24,7 @@ use zbus::names::BusName;
 use apps::list_apps;
 use bus::{CONTAINER_NAME, SESSION_NAME, gained_owner, read_state};
 use cli::spawn_waydroid;
-use config::Config;
+use config::{Config, Settings};
 use state::State;
 use tray::WaydroidTray;
 
@@ -36,6 +37,19 @@ const POLL: Duration = Duration::from_secs(5);
 const STARTING_POLL: Duration = Duration::from_millis(500);
 /// How long to wait after a menu action before re-reading the state.
 const SETTLE: Duration = Duration::from_millis(1500);
+/// How long a session has to stay frozen before "Stop session after 30 min
+/// idle" stops it. Waydroid freezes the container when no Android windows are
+/// open, so this only ever fires on a session nothing is using.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// Overrides `IDLE_TIMEOUT`, in seconds. The tests can't wait half an hour.
+const IDLE_TIMEOUT_VAR: &str = "WAYDROID_TRAY_IDLE_SECS";
+
+fn idle_timeout() -> Duration {
+    std::env::var(IDLE_TIMEOUT_VAR)
+        .ok()
+        .and_then(|secs| secs.parse().ok())
+        .map_or(IDLE_TIMEOUT, Duration::from_secs)
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -74,6 +88,8 @@ async fn main() {
         .expect("watch the session manager");
     let poke = Arc::new(Notify::new());
     let config = Config::load(&config_path);
+    let settings = Settings::new(config, config_path);
+    let auto_stop = settings.auto_stop();
 
     let session_name = BusName::try_from(SESSION_NAME).expect("valid bus name");
     let mut session_up = session_dbus
@@ -96,10 +112,9 @@ async fn main() {
         home.join(".local/share/icons")
             .to_string_lossy()
             .into_owned(),
-        config,
-        config_path,
+        settings,
         system.clone(),
-        session,
+        session.clone(),
         poke.clone(),
     );
     tray.container_up = container_up;
@@ -111,12 +126,31 @@ async fn main() {
     // and for a stuck one getting cleared. Menu actions poke the loop to
     // refresh sooner.
     let mut interval = tokio::time::interval(POLL);
+    let idle_after = idle_timeout();
+    let mut frozen_since: Option<Instant> = None;
+    let mut was_armed = false;
     loop {
         let polling = session_up || state == State::Stuck;
         let was_container_up = container_up;
+        let armed = auto_stop.load(Ordering::Relaxed);
+        // Turning the toggle on starts the clock from now, rather than
+        // stopping a session that happens to have been frozen for longer
+        // than the timeout already.
+        if armed && !was_armed {
+            frozen_since = frozen_since.map(|_| Instant::now());
+        }
+        was_armed = armed;
+        let idle_left = frozen_since.map(|since| idle_after.saturating_sub(since.elapsed()));
         let new_state = tokio::select! {
             _ = interval.tick() => if polling { read_state(&system).await } else { state },
             _ = tokio::time::sleep(STARTING_POLL), if state == State::Starting => read_state(&system).await,
+            _ = tokio::time::sleep(idle_left.unwrap_or_default()), if armed && idle_left.is_some() => {
+                spawn_waydroid(&["session", "stop"], session.clone());
+                // Cleared so a stop that doesn't take waits out the timeout
+                // again below, rather than firing on every pass.
+                frozen_since = None;
+                state
+            }
             _ = poke.notified() => {
                 tokio::time::sleep(SETTLE).await;
                 read_state(&system).await
@@ -135,6 +169,10 @@ async fn main() {
             }
         };
         let new_state = new_state.with_session(session_up);
+        frozen_since = match new_state {
+            State::Frozen => frozen_since.or_else(|| Some(Instant::now())),
+            _ => None,
+        };
         let new_apps = list_apps(&apps_dir);
         // The container service coming or going changes the menu even when the
         // state doesn't: it's what "Stop container service" acts on.

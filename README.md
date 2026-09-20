@@ -16,9 +16,10 @@ Click it (left or right) for the menu: Start session, Stop session, Stop contain
 
 **Stop container service** is enabled once the session is stopped and `waydroid-container.service` is still up. Stopping a session doesn't stop that service, and starting one D-Bus-activates it even when it's disabled at boot, so it sits there as root holding its memory until something stops it. The tray asks systemd to stop it over D-Bus, which polkit checks against `org.freedesktop.systemd1.manage-units`, so your desktop's authentication agent prompts for an admin password and remembers it for a few minutes. The tray never runs as root itself, and a dismissed prompt just gets you a notification.
 
-Two toggles at the bottom of the menu, saved to `~/.config/waydroid-tray/config`:
+Three toggles at the bottom of the menu, saved to `~/.config/waydroid-tray/config`:
 
 - **Start session at login** runs `waydroid session start` when the tray starts, if no session is running. Starting the session brings the container service up on demand, so it can stay disabled at boot.
+- **Stop session after 30 min idle** runs `waydroid session stop` once the session has been frozen for half an hour. Waydroid freezes the container when no Android windows are open, so the timer only ever runs on a session nothing is using, and opening an app resets it. Turning the toggle on starts the clock from then, so it won't stop a session that was already frozen for longer. It leaves `waydroid-container.service` alone: stopping that needs polkit, and an unattended timer shouldn't raise a password prompt.
 - **Hide icon while stopped** marks the icon passive while the session is stopped, so Plasma moves it to the hidden icons until a session starts. Panels without a hidden area, such as GNOME's, don't show it at all until then.
 
 If a Waydroid command fails, you get a desktop notification with the end of its error output.
@@ -81,7 +82,7 @@ cargo install busd    # a D-Bus broker that needs no system config
 cargo test
 ```
 
-The integration tests in `tests/harness/` run the real tray against private system and session buses, with mock Waydroid, notification and tray host services and a `waydroid` shim on `PATH`. No Waydroid, Plasma or root needed.
+The integration tests in `tests/harness/` run the real tray against private system and session buses, with mock Waydroid, notification and tray host services and a `waydroid` shim on `PATH`. No Waydroid, Plasma or root needed. They set `WAYDROID_TRAY_IDLE_SECS` to cut the idle timeout down from half an hour.
 
 `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` both run in CI.
 

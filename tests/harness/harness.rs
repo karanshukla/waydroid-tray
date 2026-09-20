@@ -17,6 +17,8 @@ pub const SESSION_NAME: &str = "id.waydro.Session";
 const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
 /// Well under the tray's 5s poll, so passing means a signal did it.
 pub const QUICK: Duration = Duration::from_secs(2);
+/// Stands in for the tray's 30 minute idle timeout.
+pub const IDLE_SECS: u64 = 1;
 
 const BUS_CONFIG: &str = r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
@@ -175,6 +177,7 @@ impl Harness {
             .env("PATH", path)
             .env("DBUS_SYSTEM_BUS_ADDRESS", &self.system_address)
             .env("DBUS_SESSION_BUS_ADDRESS", &self.session_address)
+            .env("WAYDROID_TRAY_IDLE_SECS", IDLE_SECS.to_string())
             .spawn()
             .unwrap();
         self.processes.push(tray);
