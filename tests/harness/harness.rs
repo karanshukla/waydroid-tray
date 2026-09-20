@@ -17,8 +17,10 @@ pub const SESSION_NAME: &str = "id.waydro.Session";
 const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
 /// Well under the tray's 5s poll, so passing means a signal did it.
 pub const QUICK: Duration = Duration::from_secs(2);
-/// Stands in for the tray's 30 minute idle timeout.
-pub const IDLE_SECS: u64 = 1;
+/// Stands in for the tray's 30 minute idle timeout. Comfortably longer than
+/// the tray's 1.5s settle, so a timer armed on click can be told apart from
+/// one that fired on a stale clock.
+pub const IDLE_SECS: u64 = 2;
 
 const BUS_CONFIG: &str = r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
@@ -99,7 +101,6 @@ impl Harness {
             .build()
             .await
             .unwrap();
-        // systemd is always up on a real box, unlike the container service.
         system.request_name(SYSTEMD_NAME).await.unwrap();
         session
             .request_name("org.freedesktop.Notifications")
@@ -287,18 +288,25 @@ impl Harness {
     }
 }
 
-impl Drop for Harness {
-    fn drop(&mut self) {
-        // Tray first, then the buses it's connected to.
-        for process in self.processes.iter_mut().rev() {
-            let _ = process.kill();
-            let _ = process.wait();
-        }
-        // Shim sessions run in their own process group, so they outlive the tray.
+impl Harness {
+    /// Shim sessions get their own process group, so killing the tray leaves
+    /// them running.
+    fn kill_orphaned_sessions(&self) {
         let pids = fs::read_to_string(self.dir.join("pids")).unwrap_or_default();
         for pid in pids.lines() {
             let _ = Command::new("kill").arg(pid).status();
         }
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        let tray_before_its_buses = self.processes.iter_mut().rev();
+        for process in tray_before_its_buses {
+            let _ = process.kill();
+            let _ = process.wait();
+        }
+        self.kill_orphaned_sessions();
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
@@ -315,7 +323,7 @@ fn start_bus(dir: &std::path::Path, name: &str, processes: &mut Vec<Child>) -> S
         .spawn()
         .expect("run busd (install it with `cargo install busd`)");
     processes.push(bus);
-    // busd writes READY=1 to its stdout and closes it once it's listening.
+    // busd closes its stdout once it's listening, which is what ends this read.
     let mut status = String::new();
     ready.read_to_string(&mut status).unwrap();
     assert_eq!(status.trim(), "READY=1", "busd didn't start");

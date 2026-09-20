@@ -34,7 +34,6 @@ async fn starting_session_can_be_stopped() {
     let mut h = Harness::new().await;
     h.start_container().await;
     h.start_tray().await;
-    // The session manager is up, but the container has no session yet.
     h.session.request_name(SESSION_NAME).await.unwrap();
     wait_for("Starting", QUICK, async || {
         h.menu_item("Waydroid: Starting...").await.is_some()
@@ -54,7 +53,6 @@ async fn failed_stop_leaves_it_stuck() {
     let mut h = Harness::new().await;
     h.start_session("RUNNING").await;
     h.start_tray().await;
-    // The stop failed partway, so the container keeps a stale session.
     h.mock().session_state = Some("STOPPED");
     h.session.release_name(SESSION_NAME).await.unwrap();
     let stuck = "Waydroid: Stuck (stop the session to reset)";
@@ -79,7 +77,6 @@ async fn frozen_session_shows_frozen() {
 #[tokio::test]
 async fn no_get_session_calls_while_stopped() {
     let mut h = Harness::new().await;
-    // The container service can be up with no session, e.g. after a stop.
     h.start_container().await;
     h.start_tray().await;
     let calls = h.mock().get_session_calls;

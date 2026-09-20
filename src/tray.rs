@@ -98,7 +98,6 @@ impl ksni::Tray for WaydroidTray {
     }
 
     fn status(&self) -> ksni::Status {
-        // Plasma tucks passive items away in the hidden icons.
         if self.settings.config.hide_when_stopped && self.state == State::Stopped {
             ksni::Status::Passive
         } else {
@@ -133,8 +132,7 @@ impl ksni::Tray for WaydroidTray {
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let stopped = self.state == State::Stopped;
         let active = matches!(self.state, State::Running | State::Frozen);
-        // Also the container manager method to call.
-        let freeze = if self.state == State::Frozen {
+        let freeze_method = if self.state == State::Frozen {
             "Unfreeze"
         } else {
             "Freeze"
@@ -180,16 +178,15 @@ impl ksni::Tray for WaydroidTray {
             .into(),
             StandardItem {
                 label: "Stop container service".into(),
-                // Only once the session is down: the service is what runs it.
                 enabled: stopped && self.container_up,
                 activate: Box::new(|tray: &mut Self| tray.stop_container_service()),
                 ..Default::default()
             }
             .into(),
             StandardItem {
-                label: freeze.into(),
+                label: freeze_method.into(),
                 enabled: active,
-                activate: Box::new(move |tray: &mut Self| tray.call(freeze)),
+                activate: Box::new(move |tray: &mut Self| tray.call(freeze_method)),
                 ..Default::default()
             }
             .into(),
@@ -222,7 +219,6 @@ impl ksni::Tray for WaydroidTray {
                 activate: Box::new(|tray: &mut Self| {
                     tray.settings
                         .toggle(|config| &mut config.auto_stop_when_idle);
-                    // Let the main loop pick the change up now, not on its next poll.
                     tray.poke.notify_one();
                 }),
                 ..Default::default()
