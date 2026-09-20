@@ -10,7 +10,10 @@ async fn session_start_is_picked_up_without_polling() {
     h.start_tray().await;
     assert_eq!(h.icon().await, "waydroid-tray-stopped-symbolic");
     h.start_session("RUNNING").await;
-    wait_for("Running", QUICK, async || h.icon().await == "waydroid-tray-running-symbolic").await;
+    wait_for("Running", QUICK, async || {
+        h.icon().await == "waydroid-tray-running-symbolic"
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -20,7 +23,10 @@ async fn session_stop_is_immediate() {
     h.start_tray().await;
     assert_eq!(h.icon().await, "waydroid-tray-running-symbolic");
     h.stop_session().await;
-    wait_for("Stopped", QUICK, async || h.icon().await == "waydroid-tray-stopped-symbolic").await;
+    wait_for("Stopped", QUICK, async || {
+        h.icon().await == "waydroid-tray-stopped-symbolic"
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -30,11 +36,17 @@ async fn starting_session_can_be_stopped() {
     h.start_tray().await;
     // The session manager is up, but the container has no session yet.
     h.session.request_name(SESSION_NAME).await.unwrap();
-    wait_for("Starting", QUICK, async || h.menu_item("Waydroid: Starting...").await.is_some()).await;
+    wait_for("Starting", QUICK, async || {
+        h.menu_item("Waydroid: Starting...").await.is_some()
+    })
+    .await;
     assert!(!h.menu_enabled("Start session").await);
     assert!(h.menu_enabled("Stop session").await);
     h.middle_click().await;
-    wait_for("session stop", QUICK, async || h.waydroid_log() == ["session stop"]).await;
+    wait_for("session stop", QUICK, async || {
+        h.waydroid_log() == ["session stop"]
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -50,7 +62,10 @@ async fn failed_stop_leaves_it_stuck() {
     assert!(!h.menu_enabled("Start session").await);
     assert!(h.menu_enabled("Stop session").await);
     h.middle_click().await;
-    wait_for("session stop", QUICK, async || h.waydroid_log() == ["session stop"]).await;
+    wait_for("session stop", QUICK, async || {
+        h.waydroid_log() == ["session stop"]
+    })
+    .await;
 }
 
 #[tokio::test]

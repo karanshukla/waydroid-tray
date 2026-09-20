@@ -14,7 +14,16 @@ pub async fn failure(session: &Connection, summary: &str, body: &str) {
             "/org/freedesktop/Notifications",
             Some("org.freedesktop.Notifications"),
             "Notify",
-            &("Waydroid", 0u32, "waydroid", summary, body, Vec::<&str>::new(), hints, -1i32),
+            &(
+                "Waydroid",
+                0u32,
+                "waydroid",
+                summary,
+                body,
+                Vec::<&str>::new(),
+                hints,
+                -1i32,
+            ),
         )
         .await;
     if let Err(err) = reply {

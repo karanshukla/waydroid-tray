@@ -58,7 +58,8 @@ impl WaydroidTray {
     }
 
     fn call(&self, method: &'static str) {
-        let (system, session, poke) = (self.system.clone(), self.session.clone(), self.poke.clone());
+        let (system, session, poke) =
+            (self.system.clone(), self.session.clone(), self.poke.clone());
         tokio::spawn(async move {
             if let Err(err) = bus::call(&system, method).await {
                 notify::failure(&session, &format!("{method} failed"), &err.to_string()).await;
@@ -68,7 +69,8 @@ impl WaydroidTray {
     }
 
     fn stop_container_service(&self) {
-        let (system, session, poke) = (self.system.clone(), self.session.clone(), self.poke.clone());
+        let (system, session, poke) =
+            (self.system.clone(), self.session.clone(), self.poke.clone());
         tokio::spawn(async move {
             if let Err(err) = bus::stop_container_service(&system).await {
                 notify::failure(&session, "Stop container service failed", &err.to_string()).await;
@@ -142,7 +144,11 @@ impl ksni::Tray for WaydroidTray {
         let stopped = self.state == State::Stopped;
         let active = matches!(self.state, State::Running | State::Frozen);
         // Also the container manager method to call.
-        let freeze = if self.state == State::Frozen { "Unfreeze" } else { "Freeze" };
+        let freeze = if self.state == State::Frozen {
+            "Unfreeze"
+        } else {
+            "Freeze"
+        };
         let apps: Vec<MenuItem<Self>> = self
             .apps
             .iter()

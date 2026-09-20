@@ -9,7 +9,10 @@ async fn start_at_login_starts_a_stopped_session() {
     let mut h = Harness::new().await;
     h.write_config("start_at_login=true\n");
     h.start_tray().await;
-    wait_for("session start", QUICK, async || h.waydroid_log() == ["session start"]).await;
+    wait_for("session start", QUICK, async || {
+        h.waydroid_log() == ["session start"]
+    })
+    .await;
 }
 
 #[tokio::test]

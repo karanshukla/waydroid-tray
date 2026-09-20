@@ -28,7 +28,12 @@ pub fn spawn_waydroid(args: &[&str], session: Connection) {
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(stderr.as_ref().and_then(|file| file.try_clone().ok()).map_or_else(Stdio::null, Stdio::from))
+        .stderr(
+            stderr
+                .as_ref()
+                .and_then(|file| file.try_clone().ok())
+                .map_or_else(Stdio::null, Stdio::from),
+        )
         // Own process group, so quitting the tray doesn't take a session with it.
         .process_group(0)
         .spawn();
@@ -62,9 +67,18 @@ pub fn spawn_waydroid(args: &[&str], session: Connection) {
 /// An already-deleted temp file, to capture a child's stderr in.
 fn scratch_file() -> Option<File> {
     static COUNT: AtomicU32 = AtomicU32::new(0);
-    let name = format!("waydroid-tray-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed));
+    let name = format!(
+        "waydroid-tray-{}-{}",
+        std::process::id(),
+        COUNT.fetch_add(1, Ordering::Relaxed)
+    );
     let path = std::env::temp_dir().join(name);
-    let file = File::options().read(true).write(true).create_new(true).open(&path).ok()?;
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .ok()?;
     fs::remove_file(&path).ok()?;
     Some(file)
 }

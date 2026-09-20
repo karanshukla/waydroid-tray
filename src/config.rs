@@ -20,7 +20,9 @@ impl Config {
 
     /// A missing or unreadable file means defaults.
     pub fn load(path: &Path) -> Self {
-        fs::read_to_string(path).map(|text| Self::parse(&text)).unwrap_or_default()
+        fs::read_to_string(path)
+            .map(|text| Self::parse(&text))
+            .unwrap_or_default()
     }
 
     pub fn save(self, path: &Path) -> io::Result<()> {
@@ -57,8 +59,12 @@ mod tests {
 
     #[test]
     fn round_trip() {
-        let path = std::env::temp_dir().join(format!("waydroid-tray-test-{}/config", std::process::id()));
-        let config = Config { start_at_login: true, hide_when_stopped: false };
+        let path =
+            std::env::temp_dir().join(format!("waydroid-tray-test-{}/config", std::process::id()));
+        let config = Config {
+            start_at_login: true,
+            hide_when_stopped: false,
+        };
         config.save(&path).unwrap();
         assert_eq!(Config::load(&path), config);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
@@ -66,12 +72,22 @@ mod tests {
 
     #[test]
     fn missing_file_is_default() {
-        assert_eq!(Config::load(Path::new("/nonexistent/waydroid-tray/config")), Config::default());
+        assert_eq!(
+            Config::load(Path::new("/nonexistent/waydroid-tray/config")),
+            Config::default()
+        );
     }
 
     #[test]
     fn malformed_lines_are_ignored() {
-        let config = Config::parse("garbage\nstart_at_login = true\n=true\nhide_when_stopped=yes\n");
-        assert_eq!(config, Config { start_at_login: true, hide_when_stopped: false });
+        let config =
+            Config::parse("garbage\nstart_at_login = true\n=true\nhide_when_stopped=yes\n");
+        assert_eq!(
+            config,
+            Config {
+                start_at_login: true,
+                hide_when_stopped: false
+            }
+        );
     }
 }

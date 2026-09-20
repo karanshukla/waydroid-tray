@@ -11,7 +11,10 @@ async fn hidden_while_stopped_when_enabled() {
     h.start_tray().await;
     assert_eq!(h.tray_property("Status").await, "Passive");
     h.start_session("RUNNING").await;
-    wait_for("Active", QUICK, async || h.tray_property("Status").await == "Active").await;
+    wait_for("Active", QUICK, async || {
+        h.tray_property("Status").await == "Active"
+    })
+    .await;
 }
 
 #[tokio::test]

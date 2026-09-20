@@ -83,6 +83,8 @@ cargo test
 
 The integration tests in `tests/harness/` run the real tray against private system and session buses, with mock Waydroid, notification and tray host services and a `waydroid` shim on `PATH`. No Waydroid, Plasma or root needed.
 
+`cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` both run in CI.
+
 ## Limits
 
 - Session start and stop come from D-Bus name changes. A stop shows up straight away. A start takes a moment longer, because Waydroid claims its session name before the container has a session to report, so the tray re-checks every 0.5s until it does. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.
