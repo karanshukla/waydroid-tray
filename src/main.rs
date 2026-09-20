@@ -40,7 +40,8 @@ const SETTLE: Duration = Duration::from_millis(1500);
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is set"));
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
+    let runtime =
+        std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
     let apps_dir = home.join(".local/share/applications");
     let config_path = Config::path(&home);
 
@@ -50,10 +51,18 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let system = Connection::system().await.expect("connect to the system bus");
-    let session = Connection::session().await.expect("connect to the session bus");
-    let system_dbus = DBusProxy::new(&system).await.expect("create org.freedesktop.DBus proxy");
-    let session_dbus = DBusProxy::new(&session).await.expect("create org.freedesktop.DBus proxy");
+    let system = Connection::system()
+        .await
+        .expect("connect to the system bus");
+    let session = Connection::session()
+        .await
+        .expect("connect to the session bus");
+    let system_dbus = DBusProxy::new(&system)
+        .await
+        .expect("create org.freedesktop.DBus proxy");
+    let session_dbus = DBusProxy::new(&session)
+        .await
+        .expect("create org.freedesktop.DBus proxy");
     // Subscribe before the first read, so no change slips in between.
     let mut container_changes = system_dbus
         .receive_name_owner_changed_with_args(&[(0, CONTAINER_NAME)])
@@ -67,9 +76,15 @@ async fn main() {
     let config = Config::load(&config_path);
 
     let session_name = BusName::try_from(SESSION_NAME).expect("valid bus name");
-    let mut session_up = session_dbus.name_has_owner(session_name).await.unwrap_or(false);
+    let mut session_up = session_dbus
+        .name_has_owner(session_name)
+        .await
+        .unwrap_or(false);
     let container_name = BusName::try_from(CONTAINER_NAME).expect("valid bus name");
-    let mut container_up = system_dbus.name_has_owner(container_name).await.unwrap_or(false);
+    let mut container_up = system_dbus
+        .name_has_owner(container_name)
+        .await
+        .unwrap_or(false);
     let mut state = read_state(&system).await.with_session(session_up);
     if config.start_at_login && !session_up {
         spawn_waydroid(&["session", "start"], session.clone());
@@ -78,7 +93,9 @@ async fn main() {
     let mut apps = list_apps(&apps_dir);
     let mut tray = WaydroidTray::new(
         state,
-        home.join(".local/share/icons").to_string_lossy().into_owned(),
+        home.join(".local/share/icons")
+            .to_string_lossy()
+            .into_owned(),
         config,
         config_path,
         system.clone(),

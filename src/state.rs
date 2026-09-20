@@ -35,6 +35,10 @@ impl State {
     /// While the session manager is up, "no session" from the container just
     /// means it hasn't started one yet.
     pub fn with_session(self, session_up: bool) -> State {
-        if session_up && self == State::Stopped { State::Starting } else { self }
+        if session_up && self == State::Stopped {
+            State::Starting
+        } else {
+            self
+        }
     }
 }

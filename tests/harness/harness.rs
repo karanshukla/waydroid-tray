@@ -58,7 +58,11 @@ pub struct Harness {
 impl Harness {
     pub async fn new() -> Self {
         static COUNT: AtomicU32 = AtomicU32::new(0);
-        let name = format!("waydroid-tray-harness-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed));
+        let name = format!(
+            "waydroid-tray-harness-{}-{}",
+            std::process::id(),
+            COUNT.fetch_add(1, Ordering::Relaxed)
+        );
         let dir = std::env::temp_dir().join(name);
         for sub in ["bin", "home", "config", "run"] {
             fs::create_dir_all(dir.join(sub)).unwrap();
@@ -83,7 +87,10 @@ impl Harness {
             .unwrap();
         let session = zbus::connection::Builder::address(&*session_address)
             .unwrap()
-            .serve_at("/org/freedesktop/Notifications", Notifications(mock.clone()))
+            .serve_at(
+                "/org/freedesktop/Notifications",
+                Notifications(mock.clone()),
+            )
             .unwrap()
             .serve_at("/StatusNotifierWatcher", Watcher(mock.clone()))
             .unwrap()
@@ -92,9 +99,23 @@ impl Harness {
             .unwrap();
         // systemd is always up on a real box, unlike the container service.
         system.request_name(SYSTEMD_NAME).await.unwrap();
-        session.request_name("org.freedesktop.Notifications").await.unwrap();
-        session.request_name("org.kde.StatusNotifierWatcher").await.unwrap();
-        Harness { dir, processes, system_address, session_address, system, session, mock }
+        session
+            .request_name("org.freedesktop.Notifications")
+            .await
+            .unwrap();
+        session
+            .request_name("org.kde.StatusNotifierWatcher")
+            .await
+            .unwrap();
+        Harness {
+            dir,
+            processes,
+            system_address,
+            session_address,
+            system,
+            session,
+            mock,
+        }
     }
 
     pub fn mock(&self) -> std::sync::MutexGuard<'_, Mock> {
@@ -141,7 +162,11 @@ impl Harness {
 
     /// Starts the tray and waits for it to register with the watcher.
     pub async fn start_tray(&mut self) {
-        let path = format!("{}:{}", self.dir.join("bin").display(), std::env::var("PATH").unwrap());
+        let path = format!(
+            "{}:{}",
+            self.dir.join("bin").display(),
+            std::env::var("PATH").unwrap()
+        );
         let tray = Command::new(env!("CARGO_BIN_EXE_waydroid-tray"))
             .env("HOME", self.dir.join("home"))
             .env("XDG_CONFIG_HOME", self.dir.join("config"))
@@ -153,18 +178,32 @@ impl Harness {
             .spawn()
             .unwrap();
         self.processes.push(tray);
-        wait_for("the tray to register", QUICK, async || self.mock().tray_item.is_some()).await;
+        wait_for("the tray to register", QUICK, async || {
+            self.mock().tray_item.is_some()
+        })
+        .await;
     }
 
     pub fn tray_running(&mut self) -> bool {
-        self.processes.last_mut().unwrap().try_wait().unwrap().is_none()
+        self.processes
+            .last_mut()
+            .unwrap()
+            .try_wait()
+            .unwrap()
+            .is_none()
     }
 
     fn tray_item(&self) -> String {
         self.mock().tray_item.clone().unwrap()
     }
 
-    async fn tray_call<B>(&self, path: &str, interface: &str, method: &str, body: &B) -> zbus::Message
+    async fn tray_call<B>(
+        &self,
+        path: &str,
+        interface: &str,
+        method: &str,
+        body: &B,
+    ) -> zbus::Message
     where
         B: serde::Serialize + zbus::zvariant::DynamicType,
     {
@@ -201,26 +240,47 @@ impl Harness {
             )
             .await;
         let items: Vec<(i32, HashMap<String, OwnedValue>)> = reply.body().deserialize().unwrap();
-        items
-            .into_iter()
-            .find(|(_, props)| props.get("label").and_then(|v| v.downcast_ref::<&str>().ok()) == Some(label))
+        items.into_iter().find(|(_, props)| {
+            props
+                .get("label")
+                .and_then(|v| v.downcast_ref::<&str>().ok())
+                == Some(label)
+        })
     }
 
     pub async fn click(&self, label: &str) {
-        let (id, _) = self.menu_item(label).await.unwrap_or_else(|| panic!("no menu item {label:?}"));
-        self.tray_call("/MenuBar", "com.canonical.dbusmenu", "Event", &(id, "clicked", Value::from(0), 0u32))
-            .await;
+        let (id, _) = self
+            .menu_item(label)
+            .await
+            .unwrap_or_else(|| panic!("no menu item {label:?}"));
+        self.tray_call(
+            "/MenuBar",
+            "com.canonical.dbusmenu",
+            "Event",
+            &(id, "clicked", Value::from(0), 0u32),
+        )
+        .await;
     }
 
     /// ksni leaves `enabled` out when it's the default, true.
     pub async fn menu_enabled(&self, label: &str) -> bool {
-        let (_, props) = self.menu_item(label).await.unwrap_or_else(|| panic!("no menu item {label:?}"));
-        props.get("enabled").is_none_or(|v| v.downcast_ref::<bool>().unwrap())
+        let (_, props) = self
+            .menu_item(label)
+            .await
+            .unwrap_or_else(|| panic!("no menu item {label:?}"));
+        props
+            .get("enabled")
+            .is_none_or(|v| v.downcast_ref::<bool>().unwrap())
     }
 
     pub async fn middle_click(&self) {
-        self.tray_call("/StatusNotifierItem", "org.kde.StatusNotifierItem", "SecondaryActivate", &(0i32, 0i32))
-            .await;
+        self.tray_call(
+            "/StatusNotifierItem",
+            "org.kde.StatusNotifierItem",
+            "SecondaryActivate",
+            &(0i32, 0i32),
+        )
+        .await;
     }
 }
 

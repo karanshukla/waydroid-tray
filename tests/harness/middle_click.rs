@@ -7,7 +7,10 @@ async fn middle_click_starts_a_stopped_session() {
     let mut h = Harness::new().await;
     h.start_tray().await;
     h.middle_click().await;
-    wait_for("session start", QUICK, async || h.waydroid_log() == ["session start"]).await;
+    wait_for("session start", QUICK, async || {
+        h.waydroid_log() == ["session start"]
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -16,5 +19,8 @@ async fn middle_click_stops_a_running_session() {
     h.start_session("RUNNING").await;
     h.start_tray().await;
     h.middle_click().await;
-    wait_for("session stop", QUICK, async || h.waydroid_log() == ["session stop"]).await;
+    wait_for("session stop", QUICK, async || {
+        h.waydroid_log() == ["session stop"]
+    })
+    .await;
 }

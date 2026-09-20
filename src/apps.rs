@@ -20,14 +20,23 @@ pub fn list_apps(dir: &Path) -> Vec<AppEntry> {
         .flatten()
         .filter_map(|entry| {
             let file = entry.file_name().into_string().ok()?;
-            let package = file.strip_prefix("waydroid.")?.strip_suffix(".desktop")?.to_owned();
+            let package = file
+                .strip_prefix("waydroid.")?
+                .strip_suffix(".desktop")?
+                .to_owned();
             let text = fs::read_to_string(entry.path()).ok()?;
             let fields = desktop_entry(&text);
-            if fields.get("NoDisplay").is_some_and(|v| v.eq_ignore_ascii_case("true")) {
+            if fields
+                .get("NoDisplay")
+                .is_some_and(|v| v.eq_ignore_ascii_case("true"))
+            {
                 return None;
             }
             Some(AppEntry {
-                name: fields.get("Name").cloned().unwrap_or_else(|| package.clone()),
+                name: fields
+                    .get("Name")
+                    .cloned()
+                    .unwrap_or_else(|| package.clone()),
                 icon: fields.get("Icon").map(PathBuf::from).unwrap_or_default(),
                 package,
             })

@@ -34,7 +34,9 @@ impl ContainerManager {
         let mut mock = self.0.lock().unwrap();
         mock.container_calls.push(method);
         match mock.container_fails {
-            true => Err(zbus::fdo::Error::Failed("WayDroid is not initialized".into())),
+            true => Err(zbus::fdo::Error::Failed(
+                "WayDroid is not initialized".into(),
+            )),
             false => Ok(()),
         }
     }
@@ -45,7 +47,9 @@ impl ContainerManager {
     fn get_session(&self) -> HashMap<String, String> {
         let mut mock = self.0.lock().unwrap();
         mock.get_session_calls += 1;
-        mock.session_state.map(|state| HashMap::from([("state".into(), state.into())])).unwrap_or_default()
+        mock.session_state
+            .map(|state| HashMap::from([("state".into(), state.into())]))
+            .unwrap_or_default()
     }
 
     fn freeze(&self) -> zbus::fdo::Result<()> {
@@ -69,10 +73,15 @@ impl Systemd {
         mode: String,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
         let mut mock = self.0.lock().unwrap();
-        mock.interactive_stop = header.primary().flags().contains(Flags::AllowInteractiveAuth);
+        mock.interactive_stop = header
+            .primary()
+            .flags()
+            .contains(Flags::AllowInteractiveAuth);
         mock.stopped_units.push((name, mode));
         if mock.systemd_denies {
-            return Err(zbus::fdo::Error::AccessDenied("Interactive authentication required".into()));
+            return Err(zbus::fdo::Error::AccessDenied(
+                "Interactive authentication required".into(),
+            ));
         }
         Ok(OwnedObjectPath::try_from("/org/freedesktop/systemd1/job/1").unwrap())
     }
