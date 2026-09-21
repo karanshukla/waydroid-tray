@@ -1,6 +1,6 @@
 [package]
 name = "waydroid-tray"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 description = "System tray icon for Waydroid: session status, start/stop, freeze, and an app launcher"
 license = "MIT OR Apache-2.0"
