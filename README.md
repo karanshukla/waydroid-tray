@@ -2,7 +2,7 @@
 
 A small system tray icon for [Waydroid](https://waydro.id). Waydroid doesn't ship one, so once it's running in the background there's no way to see its state or stop it without a terminal.
 
-The icon is a monochrome Android head that follows your panel's colours, like the symbolic icons next to it:
+The icon is a monochrome Android head over a panel bar, the same shape as its app menu icon, and follows your panel's colours like the symbolic icons next to it:
 
 | Icon | State |
 |---|---|

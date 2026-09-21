@@ -11,6 +11,7 @@ mod tray;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -81,6 +82,27 @@ fn idle_timeout() -> Duration {
         .ok()
         .and_then(|secs| secs.parse().ok())
         .map_or(IDLE_TIMEOUT, Duration::from_secs)
+}
+
+/// Time since boot, counting time the machine spent suspended. `Instant` and
+/// tokio's timers run on CLOCK_MONOTONIC, which stops across s2idle, so a
+/// laptop that sleeps overnight never accumulates idle time.
+fn since_boot() -> Duration {
+    fn without_proc() -> Duration {
+        static START: OnceLock<Instant> = OnceLock::new();
+        START.get_or_init(Instant::now).elapsed()
+    }
+    std::fs::read_to_string("/proc/uptime")
+        .ok()
+        .and_then(|text| text.split_whitespace().next()?.parse::<f64>().ok())
+        .map_or_else(without_proc, Duration::from_secs_f64)
+}
+
+/// How much longer a session frozen at `frozen_since` has before the idle stop
+/// fires, or `None` if it isn't frozen. Saturates, so a session that went idle
+/// while the machine was asleep is already due the moment it wakes.
+fn idle_left(frozen_since: Option<Duration>, now: Duration, timeout: Duration) -> Option<Duration> {
+    frozen_since.map(|since| timeout.saturating_sub(now.saturating_sub(since)))
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -156,17 +178,17 @@ async fn main() {
 
     let mut interval = tokio::time::interval(POLL);
     let idle_after = idle_timeout();
-    let mut frozen_since: Option<Instant> = None;
+    let mut frozen_since: Option<Duration> = None;
     let mut was_armed = false;
     loop {
         let polling = session_up || state == State::Stuck;
         let was_container_up = container_up;
         let armed = auto_stop.load(Ordering::Relaxed);
         if armed && !was_armed {
-            frozen_since = frozen_since.map(|_| Instant::now());
+            frozen_since = frozen_since.map(|_| since_boot());
         }
         was_armed = armed;
-        let idle_left = frozen_since.map(|since| idle_after.saturating_sub(since.elapsed()));
+        let idle_left = idle_left(frozen_since, since_boot(), idle_after);
         let new_state = tokio::select! {
             _ = interval.tick() => if polling { read_state(&system).await } else { state },
             _ = tokio::time::sleep(STARTING_POLL), if state == State::Starting => read_state(&system).await,
@@ -191,7 +213,7 @@ async fn main() {
         };
         let new_state = new_state.with_session(session_up);
         frozen_since = match new_state {
-            State::Frozen => frozen_since.or_else(|| Some(Instant::now())),
+            State::Frozen => frozen_since.or_else(|| Some(since_boot())),
             _ => None,
         };
         let new_apps = list_apps(&apps_dir);
@@ -209,5 +231,54 @@ async fn main() {
                 tray.set_apps(apps_for_tray);
             })
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    #[test]
+    fn a_running_session_has_no_deadline() {
+        assert_eq!(idle_left(None, secs(1_000), TIMEOUT), None);
+    }
+
+    #[test]
+    fn the_deadline_counts_down_while_frozen() {
+        assert_eq!(
+            idle_left(Some(secs(100)), secs(700), TIMEOUT),
+            Some(secs(1_200))
+        );
+    }
+
+    /// The overnight bug: the machine suspended two minutes after the session
+    /// froze and woke thirteen hours later. Measured against a clock that
+    /// counts suspend, the stop is already due on the first tick after resume.
+    #[test]
+    fn a_session_frozen_across_a_suspend_is_due_on_resume() {
+        let froze = secs(120);
+        let resumed = froze + secs(13 * 60 * 60);
+        assert_eq!(idle_left(Some(froze), resumed, TIMEOUT), Some(secs(0)));
+    }
+
+    #[test]
+    fn a_clock_that_jumps_backwards_does_not_panic() {
+        assert_eq!(
+            idle_left(Some(secs(700)), secs(100), TIMEOUT),
+            Some(TIMEOUT)
+        );
+    }
+
+    #[test]
+    fn since_boot_outlasts_this_process() {
+        let boot = since_boot();
+        assert!(boot > Duration::ZERO, "{boot:?}");
+        assert!(since_boot() >= boot);
     }
 }

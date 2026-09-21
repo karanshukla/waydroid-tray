@@ -17,7 +17,7 @@ pub async fn failure(session: &Connection, summary: &str, body: &str) {
             &(
                 "Waydroid",
                 0u32,
-                "waydroid",
+                "waydroid-tray",
                 summary,
                 body,
                 Vec::<&str>::new(),

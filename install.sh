@@ -11,6 +11,7 @@ repo="karanshukla/waydroid-tray"
 here=$(cd "$(dirname "$0")" && pwd)
 bin="$HOME/.local/bin/waydroid-tray"
 icons="$HOME/.local/share/icons/hicolor/scalable/status"
+app_icon="$HOME/.local/share/icons/hicolor/scalable/apps/waydroid-tray.svg"
 unit="$HOME/.config/systemd/user/waydroid-tray.service"
 launcher="$HOME/.local/share/applications/waydroid-tray.desktop"
 # The unit starts with graphical-session.target, which many desktops never
@@ -28,7 +29,7 @@ stop_tray() {
 if [ "${1:-}" = "--uninstall" ]; then
     systemctl --user disable waydroid-tray 2> /dev/null || true
     stop_tray
-    rm -f "$bin" "$unit" "$autostart" "$launcher" "$icons"/waydroid-tray-*.svg
+    rm -f "$bin" "$unit" "$autostart" "$launcher" "$app_icon" "$icons"/waydroid-tray-*.svg
     systemctl --user daemon-reload 2> /dev/null || true
     echo "Removed waydroid-tray."
     exit 0
@@ -61,6 +62,7 @@ install -Dm755 "$built" "$bin"
 # Drops icons an older version named differently.
 rm -f "$icons"/waydroid-tray-*.svg
 install -Dm644 -t "$icons" "$here"/icons/waydroid-tray-*.svg
+install -Dm644 "$here/icons/waydroid-tray.svg" "$app_icon"
 install -Dm644 "$here/waydroid-tray.service" "$unit"
 install -Dm644 "$here/waydroid-tray.desktop" "$launcher"
 install -Dm644 "$here/waydroid-tray.desktop" "$autostart"
