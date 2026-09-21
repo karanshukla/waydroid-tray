@@ -3,6 +3,6 @@ Type=Application
 Name=Waydroid Tray
 Comment=Tray icon to start, stop and launch Waydroid apps
 Exec=sh -c "systemctl --user import-environment WAYLAND_DISPLAY; systemctl --user start waydroid-tray"
-Icon=waydroid
+Icon=waydroid-tray
 Categories=Utility;
 Terminal=false
