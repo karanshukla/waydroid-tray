@@ -1,7 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22" width="22" height="22">
   <style type="text/css" id="current-color-scheme">.ColorScheme-Text { color:#fcfcfc; }</style>
   <g class="ColorScheme-Text" fill="currentColor">
-    <path fill-rule="evenodd" d="M3 16a8 8 0 0 1 16 0z M9.1 12.8a1.1 1.1 0 1 1-2.2 0a1.1 1.1 0 1 1 2.2 0z M15.1 12.8a1.1 1.1 0 1 1-2.2 0a1.1 1.1 0 1 1 2.2 0z"/>
-    <path d="M7.01 9.16L5.21 5.96A0.7 0.7 0 0 0 3.99 6.64L5.79 9.84A0.7 0.7 0 0 0 7.01 9.16z M16.21 9.84L18.01 6.64A0.7 0.7 0 0 0 16.79 5.96L14.99 9.16A0.7 0.7 0 0 0 16.21 9.84z"/>
+    <g transform="translate(0 -1.5)">
+      <path fill-rule="evenodd" d="M3 16a8 8 0 0 1 16 0z M9.1 12.8a1.1 1.1 0 1 1-2.2 0a1.1 1.1 0 1 1 2.2 0z M15.1 12.8a1.1 1.1 0 1 1-2.2 0a1.1 1.1 0 1 1 2.2 0z"/>
+      <path d="M7.01 9.16L5.21 5.96A0.7 0.7 0 0 0 3.99 6.64L5.79 9.84A0.7 0.7 0 0 0 7.01 9.16z M16.21 9.84L18.01 6.64A0.7 0.7 0 0 0 16.79 5.96L14.99 9.16A0.7 0.7 0 0 0 16.21 9.84z"/>
+    </g>
+    <path fill-rule="evenodd" d="M5.5 16h11a1.5 1.5 0 0 1 0 3h-11a1.5 1.5 0 0 1 0-3z M16.3 17.5a0.8 0.8 0 1 1-1.6 0a0.8 0.8 0 1 1 1.6 0z"/>
   </g>
 </svg>
