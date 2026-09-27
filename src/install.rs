@@ -159,20 +159,30 @@ fn systemctl_quiet(args: &[&str]) -> bool {
 }
 
 /// Stops the unit and any tray started outside it, e.g. by an older version,
-/// and waits for them to exit and drop the lock.
+/// and waits for them to exit and drop the lock. Any still running after five
+/// seconds get SIGKILL.
 fn stop_tray() {
     systemctl_quiet(&["stop", "waydroid-tray"]);
-    loop {
+    for _ in 0..50 {
         let others = other_trays();
         if others.is_empty() {
             return;
         }
-        let _ = Command::new("kill")
-            .args(&others)
-            .stderr(Stdio::null())
-            .status();
+        kill(&others, "-TERM");
         std::thread::sleep(Duration::from_millis(100));
     }
+    kill(&other_trays(), "-KILL");
+}
+
+fn kill(pids: &[String], signal: &str) {
+    if pids.is_empty() {
+        return;
+    }
+    let _ = Command::new("kill")
+        .arg(signal)
+        .args(pids)
+        .stderr(Stdio::null())
+        .status();
 }
 
 /// This user's other `waydroid-tray` processes. Not this one, which has the
