@@ -40,7 +40,13 @@ curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/inst
 
 To build from source instead, run `./install.sh` from a checkout (needs a Rust toolchain). `./install.sh --uninstall` works there too.
 
-It's also [on crates.io](https://crates.io/crates/waydroid-tray), but `cargo install waydroid-tray` only gets you the binary, in `~/.cargo/bin`. The icons, systemd unit and menu entry come from `install.sh`, so without it the tray shows a generic icon and you start it yourself.
+It's also [on crates.io](https://crates.io/crates/waydroid-tray). Cargo only installs the binary, so run `--install` afterwards for the icons, unit and menu entries. The unit runs the binary from `~/.cargo/bin`:
+
+```sh
+cargo install waydroid-tray && waydroid-tray --install
+```
+
+`waydroid-tray --uninstall` removes them again, and `cargo uninstall waydroid-tray` the binary.
 
 `waydroid-tray --version` prints the version and `--help` lists the flags; both answer while a tray is already running.
 
