@@ -1,11 +1,8 @@
 //! `--install` and `--uninstall`.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-use std::process::Command;
 
-const SYSTEMCTL: &str = "#!/bin/sh\necho \"$*\" >> \"${0%/*}/../systemctl.log\"\n";
+use crate::harness::Harness;
 
 const FILES: [&str; 7] = [
     ".local/share/icons/hicolor/scalable/status/waydroid-tray-running-symbolic.svg",
@@ -17,35 +14,19 @@ const FILES: [&str; 7] = [
     ".config/autostart/waydroid-tray.desktop",
 ];
 
-/// PATH holds only a `systemctl` that logs its arguments. With no `pgrep` on
-/// it, the other tests' trays are safe from the stop.
-fn run(dir: &Path, arg: &str) -> Vec<String> {
-    let status = Command::new(env!("CARGO_BIN_EXE_waydroid-tray"))
-        .arg(arg)
-        .env("HOME", dir.join("home"))
-        .env("PATH", dir.join("bin"))
-        .env_remove("WAYLAND_DISPLAY")
-        .status()
-        .unwrap();
-    assert!(status.success(), "{arg} exited {status}");
-    let log = fs::read_to_string(dir.join("systemctl.log")).unwrap_or_default();
-    fs::remove_file(dir.join("systemctl.log")).unwrap();
-    log.lines().map(String::from).collect()
+fn take_calls(harness: &Harness) -> Vec<String> {
+    std::mem::take(&mut harness.mock().user_systemd_calls)
 }
 
-#[test]
-fn install_writes_the_setup_and_uninstall_removes_it() {
-    let dir = std::env::temp_dir().join(format!("waydroid-tray-install-{}", std::process::id()));
-    let home = dir.join("home");
-    let shim = dir.join("bin/systemctl");
-    fs::create_dir_all(shim.parent().unwrap()).unwrap();
-    fs::write(&shim, SYSTEMCTL).unwrap();
-    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+#[tokio::test]
+async fn install_writes_the_setup_and_uninstall_removes_it() {
+    let harness = Harness::new().await;
+    let home = harness.dir.join("home");
     let old_icon = home.join(".local/share/icons/hicolor/scalable/status/waydroid-tray-old.svg");
     fs::create_dir_all(old_icon.parent().unwrap()).unwrap();
     fs::write(&old_icon, "").unwrap();
 
-    let calls = run(&dir, "--install");
+    harness.run_setup("--install", "wayland-1").await;
     for file in FILES {
         assert!(home.join(file).is_file(), "{file} missing");
     }
@@ -54,27 +35,56 @@ fn install_writes_the_setup_and_uninstall_removes_it() {
     let exec = format!("ExecStart={}\n", env!("CARGO_BIN_EXE_waydroid-tray"));
     assert!(unit.contains(&exec), "{unit}");
     assert_eq!(
-        calls,
+        take_calls(&harness),
         [
-            "--user daemon-reload",
-            "--user enable waydroid-tray",
-            "--user stop waydroid-tray",
-            "--user is-active graphical-session.target",
-            "--user start waydroid-tray",
+            "Reload",
+            "EnableUnitFiles waydroid-tray.service",
+            "StopUnit waydroid-tray.service",
+            "SetEnvironment WAYLAND_DISPLAY=wayland-1",
+            "StartUnit waydroid-tray.service",
         ]
     );
 
-    let calls = run(&dir, "--uninstall");
+    harness.run_setup("--uninstall", "wayland-1").await;
     for file in FILES {
         assert!(!home.join(file).exists(), "{file} left behind");
     }
     assert_eq!(
-        calls,
+        take_calls(&harness),
         [
-            "--user disable waydroid-tray",
-            "--user stop waydroid-tray",
-            "--user daemon-reload",
+            "DisableUnitFiles waydroid-tray.service",
+            "StopUnit waydroid-tray.service",
+            "Reload",
         ]
     );
-    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn install_outside_a_desktop_session_leaves_the_tray_for_next_login() {
+    let harness = Harness::new().await;
+    harness.run_setup("--install", "").await;
+    assert_eq!(
+        take_calls(&harness),
+        [
+            "Reload",
+            "EnableUnitFiles waydroid-tray.service",
+            "StopUnit waydroid-tray.service",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn install_starts_the_tray_in_a_session_without_wayland_display() {
+    let harness = Harness::new().await;
+    harness.mock().graphical_session = true;
+    harness.run_setup("--install", "").await;
+    assert_eq!(
+        take_calls(&harness),
+        [
+            "Reload",
+            "EnableUnitFiles waydroid-tray.service",
+            "StopUnit waydroid-tray.service",
+            "StartUnit waydroid-tray.service",
+        ]
+    );
 }

@@ -17,9 +17,9 @@ const INTERFACE: &str = "id.waydro.ContainerManager";
 /// The root service the container manager runs in. Stopping a session leaves
 /// it up, holding its memory, so the tray offers a way to stop it too.
 const CONTAINER_UNIT: &str = "waydroid-container.service";
-const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
-const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
-const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
+pub const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
+pub const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+pub const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
 /// systemd's usual job mode: take over from any job already queued for the unit.
 const REPLACE_QUEUED_JOB: &str = "replace";
 

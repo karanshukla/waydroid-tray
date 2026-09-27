@@ -63,9 +63,9 @@ const HELP: &str = concat!(
 );
 
 /// Answers the flags before anything else, so they work with a tray already
-/// holding the lock and with no bus to talk to. Unrecognised arguments are
-/// ignored, the way they were before there were any.
-fn print_flags_and_exit() {
+/// holding the lock, and `--version` and `--help` with no bus to talk to.
+/// Unrecognised arguments are ignored, the way they were before there were any.
+async fn print_flags_and_exit() {
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "-V" | "--version" => {
@@ -76,8 +76,8 @@ fn print_flags_and_exit() {
                 println!("{HELP}");
                 std::process::exit(0);
             }
-            "--install" => exit_with(install::install(&home())),
-            "--uninstall" => exit_with(install::uninstall(&home())),
+            "--install" => exit_with(install::install(&home()).await),
+            "--uninstall" => exit_with(install::uninstall(&home()).await),
             _ => {}
         }
     }
@@ -125,7 +125,7 @@ fn idle_left(frozen_since: Option<Duration>, now: Duration, timeout: Duration) -
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    print_flags_and_exit();
+    print_flags_and_exit().await;
     let home = home();
     let runtime =
         std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);

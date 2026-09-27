@@ -40,6 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/inst
 
 To build from source instead, run `./install.sh` from a checkout (needs a Rust toolchain). `./install.sh --uninstall` works there too.
 
+On an immutable distro (Silverblue, Kinoite, Bazzite, SteamOS and the like), everything above lands in your home directory, so none of it needs root or a layered package. If your Rust toolchain lives in a toolbox or distrobox, `./install.sh` and `waydroid-tray --install` work from inside it: the unit is set up on the host through the shared session bus. The tray itself runs on the host, so build it in a container whose distro isn't newer than the host, which is toolbox's default. Otherwise the binary won't find the glibc it was built against.
+
 It's also [on crates.io](https://crates.io/crates/waydroid-tray). Cargo only installs the binary, so run `--install` afterwards for the icons, unit and menu entries. The unit runs the binary from `~/.cargo/bin`:
 
 ```sh

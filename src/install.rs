@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use zbus::zvariant::OwnedObjectPath;
+use zbus::{Connection, Proxy};
+
+use crate::bus::{SYSTEMD_MANAGER, SYSTEMD_NAME, SYSTEMD_PATH};
+
 const UNIT: &str = include_str!("../waydroid-tray.service");
 const DESKTOP: &str = include_str!("../waydroid-tray.desktop");
 const APP_ICON: &str = include_str!("../icons/waydroid-tray.svg");
@@ -28,6 +33,8 @@ const STATUS_ICONS: [(&str, &str); 3] = [
 /// Where `waydroid-tray.service` expects the binary. `--install` points it at
 /// this one instead.
 const DEFAULT_EXEC: &str = "%h/.local/bin/waydroid-tray";
+const UNIT_NAME: &str = "waydroid-tray.service";
+const SYSTEMD_UNIT: &str = "org.freedesktop.systemd1.Unit";
 
 struct Paths {
     status_icons: PathBuf,
@@ -51,7 +58,7 @@ impl Paths {
     }
 }
 
-pub fn install(home: &Path) -> io::Result<()> {
+pub async fn install(home: &Path) -> io::Result<()> {
     let paths = Paths::new(home);
     let exe = std::env::current_exe()?;
     remove_status_icons(&paths.status_icons)?;
@@ -66,29 +73,40 @@ pub fn install(home: &Path) -> io::Result<()> {
     write(&paths.launcher, DESKTOP)?;
     write(&paths.autostart, DESKTOP)?;
 
-    systemctl(&["daemon-reload"])?;
-    systemctl(&["enable", "waydroid-tray"])?;
-    stop_tray();
-    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|display| !display.is_empty());
+    let systemd = UserSystemd::connect().await?;
+    systemd.call("Reload", &()).await?;
+    systemd
+        .call("EnableUnitFiles", &(&[UNIT_NAME][..], false, false))
+        .await?;
+    stop_tray(Some(&systemd)).await;
+    let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
     // Outside a desktop session (e.g. over ssh) there's no tray to show it in.
-    if !wayland && !systemctl_quiet(&["is-active", "graphical-session.target"]) {
+    if wayland.is_empty() && !systemd.is_active("graphical-session.target").await {
         println!("Installed. The tray starts with your next desktop session.");
         return Ok(());
     }
     // Waydroid needs it, and not every desktop passes it on to systemd.
-    if wayland {
-        systemctl(&["import-environment", "WAYLAND_DISPLAY"])?;
+    if !wayland.is_empty() {
+        let assignment = format!("WAYLAND_DISPLAY={wayland}");
+        systemd
+            .call("SetEnvironment", &(&[assignment][..],))
+            .await?;
     }
-    systemctl(&["start", "waydroid-tray"])?;
+    systemd.call("StartUnit", &(UNIT_NAME, "replace")).await?;
     println!("Installed and started the tray.");
     Ok(())
 }
 
 /// Leaves the binary itself to whatever installed it.
-pub fn uninstall(home: &Path) -> io::Result<()> {
+pub async fn uninstall(home: &Path) -> io::Result<()> {
     let paths = Paths::new(home);
-    systemctl_quiet(&["disable", "waydroid-tray"]);
-    stop_tray();
+    let systemd = UserSystemd::connect().await.ok();
+    if let Some(systemd) = &systemd {
+        let _ = systemd
+            .call("DisableUnitFiles", &(&[UNIT_NAME][..], false))
+            .await;
+    }
+    stop_tray(systemd.as_ref()).await;
     remove_status_icons(&paths.status_icons)?;
     for path in [
         &paths.app_icon,
@@ -98,7 +116,9 @@ pub fn uninstall(home: &Path) -> io::Result<()> {
     ] {
         remove(path)?;
     }
-    systemctl_quiet(&["daemon-reload"]);
+    if let Some(systemd) = &systemd {
+        let _ = systemd.call("Reload", &()).await;
+    }
     println!("Removed the waydroid-tray unit, icons and menu entries.");
     Ok(())
 }
@@ -134,35 +154,59 @@ fn remove_status_icons(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn systemctl(args: &[&str]) -> io::Result<()> {
-    let command = format!("systemctl --user {}", args.join(" "));
-    let status = Command::new("systemctl")
-        .arg("--user")
-        .args(args)
-        .status()
-        .map_err(|err| io::Error::new(err.kind(), format!("{command}: {err}")))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!("{command} failed: {status}")))
-    }
-}
+/// The user's systemd manager, over the session bus. `systemctl` can't be
+/// relied on for this: toolbox and distrobox images may not ship it, and in a
+/// container sharing the host's PID namespace it decides it's in a chroot and
+/// skips the command without failing. Both share the host's session bus.
+struct UserSystemd(Proxy<'static>);
 
-fn systemctl_quiet(args: &[&str]) -> bool {
-    Command::new("systemctl")
-        .arg("--user")
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+impl UserSystemd {
+    async fn connect() -> io::Result<Self> {
+        let connect = async {
+            let bus = Connection::session().await?;
+            Proxy::new_owned(bus, SYSTEMD_NAME, SYSTEMD_PATH, SYSTEMD_MANAGER).await
+        };
+        connect
+            .await
+            .map(UserSystemd)
+            .map_err(|err| io::Error::other(format!("reach the user's systemd: {err}")))
+    }
+
+    async fn call<B>(&self, method: &str, body: &B) -> io::Result<()>
+    where
+        B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+    {
+        self.0
+            .call_method(method, body)
+            .await
+            .map(drop)
+            .map_err(|err| io::Error::other(format!("systemd {method}: {err}")))
+    }
+
+    async fn is_active(&self, unit: &str) -> bool {
+        let Ok(reply) = self.0.call_method("GetUnit", &(unit,)).await else {
+            return false;
+        };
+        let Ok(path) = reply.body().deserialize::<OwnedObjectPath>() else {
+            return false;
+        };
+        let Ok(unit) = Proxy::new(self.0.connection(), SYSTEMD_NAME, path, SYSTEMD_UNIT).await
+        else {
+            return false;
+        };
+        unit.get_property::<String>("ActiveState")
+            .await
+            .is_ok_and(|state| state == "active")
+    }
 }
 
 /// Stops the unit and any tray started outside it, e.g. by an older version,
 /// and waits for them to exit and drop the lock. Any still running after five
 /// seconds get SIGKILL.
-fn stop_tray() {
-    systemctl_quiet(&["stop", "waydroid-tray"]);
+async fn stop_tray(systemd: Option<&UserSystemd>) {
+    if let Some(systemd) = systemd {
+        let _ = systemd.call("StopUnit", &(UNIT_NAME, "replace")).await;
+    }
     for _ in 0..50 {
         let others = other_trays();
         if others.is_empty() {
