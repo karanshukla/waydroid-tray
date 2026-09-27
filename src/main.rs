@@ -4,6 +4,7 @@ mod apps;
 mod bus;
 mod cli;
 mod config;
+mod install;
 mod notify;
 mod state;
 mod tray;
@@ -53,14 +54,17 @@ const HELP: &str = concat!(
     env!("CARGO_PKG_DESCRIPTION"),
     "\n\nUsage: waydroid-tray [OPTIONS]\n\n",
     "Options:\n",
+    "  --install      Install the icons, systemd user unit, and menu and\n",
+    "                 autostart entries, then start the tray\n",
+    "  --uninstall    Remove them again\n",
     "  -h, --help     Print this help\n",
     "  -V, --version  Print the version\n",
     "\nWith no options it registers the tray icon and runs until it's quit.",
 );
 
-/// Answers `--version` and `--help` before anything else, so they work with a
-/// tray already holding the lock and with no bus to talk to. Unrecognised
-/// arguments are ignored, the way they were before there were any.
+/// Answers the flags before anything else, so they work with a tray already
+/// holding the lock and with no bus to talk to. Unrecognised arguments are
+/// ignored, the way they were before there were any.
 fn print_flags_and_exit() {
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
@@ -72,9 +76,23 @@ fn print_flags_and_exit() {
                 println!("{HELP}");
                 std::process::exit(0);
             }
+            "--install" => exit_with(install::install(&home())),
+            "--uninstall" => exit_with(install::uninstall(&home())),
             _ => {}
         }
     }
+}
+
+fn exit_with(result: std::io::Result<()>) -> ! {
+    if let Err(err) = result {
+        eprintln!("{err}");
+        std::process::exit(1);
+    }
+    std::process::exit(0);
+}
+
+fn home() -> PathBuf {
+    PathBuf::from(std::env::var_os("HOME").expect("HOME is set"))
 }
 
 fn idle_timeout() -> Duration {
@@ -108,7 +126,7 @@ fn idle_left(frozen_since: Option<Duration>, now: Duration, timeout: Duration) -
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     print_flags_and_exit();
-    let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is set"));
+    let home = home();
     let runtime =
         std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
     let apps_dir = home.join(".local/share/applications");

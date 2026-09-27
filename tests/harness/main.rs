@@ -11,6 +11,7 @@ mod container_service;
 mod flags;
 mod freeze;
 mod hide_icon;
+mod install;
 mod middle_click;
 mod session_state;
 mod start_at_login;
