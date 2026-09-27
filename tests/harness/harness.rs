@@ -10,7 +10,10 @@ use std::time::{Duration, Instant};
 use zbus::Connection;
 use zbus::zvariant::{OwnedValue, Value};
 
-use crate::mock::{ContainerManager, Mock, Notifications, Shared, Systemd, Watcher};
+use crate::mock::{
+    ContainerManager, GRAPHICAL_SESSION_PATH, GraphicalSession, Mock, Notifications, Shared,
+    Systemd, UserSystemd, Watcher,
+};
 
 const CONTAINER_NAME: &str = "id.waydro.Container";
 pub const SESSION_NAME: &str = "id.waydro.Session";
@@ -98,6 +101,10 @@ impl Harness {
             .unwrap()
             .serve_at("/StatusNotifierWatcher", Watcher(mock.clone()))
             .unwrap()
+            .serve_at("/org/freedesktop/systemd1", UserSystemd(mock.clone()))
+            .unwrap()
+            .serve_at(GRAPHICAL_SESSION_PATH, GraphicalSession)
+            .unwrap()
             .build()
             .await
             .unwrap();
@@ -110,6 +117,7 @@ impl Harness {
             .request_name("org.kde.StatusNotifierWatcher")
             .await
             .unwrap();
+        session.request_name(SYSTEMD_NAME).await.unwrap();
         Harness {
             dir,
             processes,
@@ -186,6 +194,22 @@ impl Harness {
             self.mock().tray_item.is_some()
         })
         .await;
+    }
+
+    /// Runs `--install` or `--uninstall` against the session bus. PATH holds
+    /// only the `waydroid` shim: with no `pgrep` on it, the stop can't reach
+    /// other tests' trays.
+    pub async fn run_setup(&self, arg: &str, wayland_display: &str) {
+        let status = tokio::process::Command::new(env!("CARGO_BIN_EXE_waydroid-tray"))
+            .arg(arg)
+            .env("HOME", self.dir.join("home"))
+            .env("PATH", self.dir.join("bin"))
+            .env("DBUS_SESSION_BUS_ADDRESS", &self.session_address)
+            .env("WAYLAND_DISPLAY", wayland_display)
+            .status()
+            .await
+            .unwrap();
+        assert!(status.success(), "{arg} exited {status}");
     }
 
     pub fn tray_running(&mut self) -> bool {

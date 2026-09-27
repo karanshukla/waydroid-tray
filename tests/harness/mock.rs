@@ -21,6 +21,10 @@ pub struct Mock {
     pub interactive_stop: bool,
     /// Refuse `StopUnit` the way polkit does when the prompt is dismissed.
     pub systemd_denies: bool,
+    /// Every call `--install`/`--uninstall` made to the user's systemd.
+    pub user_systemd_calls: Vec<String>,
+    /// Whether the user's systemd has reached `graphical-session.target`.
+    pub graphical_session: bool,
     pub notifications: Vec<(String, String)>,
     pub tray_item: Option<String>,
 }
@@ -84,6 +88,76 @@ impl Systemd {
             ));
         }
         Ok(OwnedObjectPath::try_from("/org/freedesktop/systemd1/job/1").unwrap())
+    }
+}
+
+/// The user's systemd manager on the session bus, recording what the setup
+/// flags ask of it.
+pub struct UserSystemd(pub Shared);
+
+pub const GRAPHICAL_SESSION_PATH: &str =
+    "/org/freedesktop/systemd1/unit/graphical_2dsession_2etarget";
+
+impl UserSystemd {
+    fn record(&self, call: String) {
+        self.0.lock().unwrap().user_systemd_calls.push(call);
+    }
+}
+
+#[interface(name = "org.freedesktop.systemd1.Manager")]
+impl UserSystemd {
+    fn reload(&self) {
+        self.record("Reload".into());
+    }
+
+    fn enable_unit_files(
+        &self,
+        files: Vec<String>,
+        _runtime: bool,
+        _force: bool,
+    ) -> (bool, Vec<(String, String, String)>) {
+        self.record(format!("EnableUnitFiles {}", files.join(" ")));
+        (true, Vec::new())
+    }
+
+    fn disable_unit_files(
+        &self,
+        files: Vec<String>,
+        _runtime: bool,
+    ) -> Vec<(String, String, String)> {
+        self.record(format!("DisableUnitFiles {}", files.join(" ")));
+        Vec::new()
+    }
+
+    fn set_environment(&self, assignments: Vec<String>) {
+        self.record(format!("SetEnvironment {}", assignments.join(" ")));
+    }
+
+    fn start_unit(&self, name: String, _mode: String) -> OwnedObjectPath {
+        self.record(format!("StartUnit {name}"));
+        OwnedObjectPath::try_from("/org/freedesktop/systemd1/job/1").unwrap()
+    }
+
+    fn stop_unit(&self, name: String, _mode: String) -> OwnedObjectPath {
+        self.record(format!("StopUnit {name}"));
+        OwnedObjectPath::try_from("/org/freedesktop/systemd1/job/1").unwrap()
+    }
+
+    fn get_unit(&self, name: String) -> zbus::fdo::Result<OwnedObjectPath> {
+        if name == "graphical-session.target" && self.0.lock().unwrap().graphical_session {
+            return Ok(OwnedObjectPath::try_from(GRAPHICAL_SESSION_PATH).unwrap());
+        }
+        Err(zbus::fdo::Error::Failed(format!("Unit {name} not loaded.")))
+    }
+}
+
+pub struct GraphicalSession;
+
+#[interface(name = "org.freedesktop.systemd1.Unit")]
+impl GraphicalSession {
+    #[zbus(property)]
+    fn active_state(&self) -> String {
+        "active".into()
     }
 }
 
