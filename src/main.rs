@@ -117,8 +117,8 @@ fn since_boot() -> Duration {
 }
 
 /// How much longer a session frozen at `frozen_since` has before the idle stop
-/// fires, or `None` if it isn't frozen. Saturates, so a session that went idle
-/// while the machine was asleep is already due the moment it wakes.
+/// fires, or `None` if it isn't frozen. Saturates at zero: see the suspend and
+/// backwards-clock tests.
 fn idle_left(frozen_since: Option<Duration>, now: Duration, timeout: Duration) -> Option<Duration> {
     frozen_since.map(|since| timeout.saturating_sub(now.saturating_sub(since)))
 }
@@ -275,9 +275,7 @@ mod tests {
         );
     }
 
-    /// The overnight bug: the machine suspended two minutes after the session
-    /// froze and woke thirteen hours later. Measured against a clock that
-    /// counts suspend, the stop is already due on the first tick after resume.
+    /// Frozen two minutes before a thirteen-hour suspend.
     #[test]
     fn a_session_frozen_across_a_suspend_is_due_on_resume() {
         let froze = secs(120);

@@ -80,8 +80,9 @@ pub async fn install(home: &Path) -> io::Result<()> {
         .await?;
     stop_tray(Some(&systemd)).await;
     let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
-    // Outside a desktop session (e.g. over ssh) there's no tray to show it in.
-    if wayland.is_empty() && !systemd.is_active("graphical-session.target").await {
+    let no_desktop_session =
+        wayland.is_empty() && !systemd.is_active("graphical-session.target").await;
+    if no_desktop_session {
         println!("Installed. The tray starts with your next desktop session.");
         return Ok(());
     }
