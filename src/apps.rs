@@ -11,7 +11,6 @@ pub struct AppEntry {
     pub icon: PathBuf,
 }
 
-/// Visible Waydroid apps in `dir`, sorted by name.
 pub fn list_apps(dir: &Path) -> Vec<AppEntry> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
@@ -46,7 +45,6 @@ pub fn list_apps(dir: &Path) -> Vec<AppEntry> {
     apps
 }
 
-/// Key/value pairs from the `[Desktop Entry]` group only (not the actions).
 fn desktop_entry(text: &str) -> HashMap<String, String> {
     let mut in_entry = false;
     let mut fields = HashMap::new();
@@ -58,4 +56,72 @@ fn desktop_entry(text: &str) -> HashMap<String, String> {
         }
     }
     fields
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dir_with(files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "waydroid-tray-apps-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for (name, text) in files {
+            fs::write(dir.join(name), text).unwrap();
+        }
+        dir
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let names = list_apps(dir).into_iter().map(|app| app.name).collect();
+        fs::remove_dir_all(dir).unwrap();
+        names
+    }
+
+    #[test]
+    fn lists_visible_apps() {
+        let dir = dir_with(&[("waydroid.a.b.desktop", "[Desktop Entry]\nName=Ab\n")]);
+        assert_eq!(names(&dir), ["Ab"]);
+    }
+
+    #[test]
+    fn hides_apps_marked_no_display() {
+        let dir = dir_with(&[
+            (
+                "waydroid.a.desktop",
+                "[Desktop Entry]\nName=A\nNoDisplay=true\n",
+            ),
+            (
+                "waydroid.b.desktop",
+                "[Desktop Entry]\nName=B\nNoDisplay=false\n",
+            ),
+        ]);
+        assert_eq!(names(&dir), ["B"]);
+    }
+
+    #[test]
+    fn sorts_apps_by_name_ignoring_case() {
+        let dir = dir_with(&[
+            ("waydroid.z.desktop", "[Desktop Entry]\nName=zebra\n"),
+            ("waydroid.m.desktop", "[Desktop Entry]\nName=Mango\n"),
+            ("waydroid.a.desktop", "[Desktop Entry]\nName=Apple\n"),
+        ]);
+        assert_eq!(names(&dir), ["Apple", "Mango", "zebra"]);
+    }
+
+    #[test]
+    fn reads_fields_from_the_desktop_entry_group() {
+        let text = "[Desktop Entry]\nName=Real\n[Desktop Action x]\nName=Action\n";
+        assert_eq!(desktop_entry(text)["Name"], "Real");
+    }
+
+    #[test]
+    fn ignores_fields_outside_the_desktop_entry_group() {
+        let fields = desktop_entry("[Desktop Action x]\nName=Action\n");
+        assert!(fields.is_empty());
+    }
 }

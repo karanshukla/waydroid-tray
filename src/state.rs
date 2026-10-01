@@ -32,13 +32,30 @@ impl State {
         }
     }
 
-    /// While the session manager is up, "no session" from the container just
-    /// means it hasn't started one yet.
+    /// Pinned by the `with_session` tests below.
     pub fn with_session(self, session_up: bool) -> State {
         if session_up && self == State::Stopped {
             State::Starting
         } else {
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stopped_with_session_manager_up_is_starting() {
+        assert_eq!(State::Stopped.with_session(true), State::Starting);
+    }
+
+    #[test]
+    fn other_states_are_unchanged_by_the_session_manager() {
+        for state in [State::Running, State::Frozen, State::Stuck, State::Starting] {
+            assert_eq!(state.with_session(true), state);
+        }
+        assert_eq!(State::Stopped.with_session(false), State::Stopped);
     }
 }

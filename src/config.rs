@@ -21,7 +21,6 @@ impl Config {
             .join("waydroid-tray/config")
     }
 
-    /// A missing or unreadable file means defaults.
     pub fn load(path: &Path) -> Self {
         fs::read_to_string(path)
             .map(|text| Self::parse(&text))
@@ -41,7 +40,6 @@ impl Config {
         )
     }
 
-    /// Unknown keys and malformed lines are ignored.
     fn parse(text: &str) -> Self {
         let mut config = Self::default();
         for (key, value) in text.lines().filter_map(|line| line.split_once('=')) {
@@ -115,6 +113,18 @@ mod tests {
         assert_eq!(
             Config::load(Path::new("/nonexistent/waydroid-tray/config")),
             Config::default()
+        );
+    }
+
+    #[test]
+    fn ignores_unknown_keys() {
+        let config = Config::parse("colour=blue\nstart_at_login=true\n");
+        assert_eq!(
+            config,
+            Config {
+                start_at_login: true,
+                ..Config::default()
+            }
         );
     }
 
