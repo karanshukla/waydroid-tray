@@ -1,6 +1,5 @@
 //! The tray icon and its menu.
 
-use std::fs;
 use std::sync::Arc;
 
 use ksni::ToolTip;
@@ -8,7 +7,7 @@ use ksni::menu::{CheckmarkItem, MenuItem, StandardItem, SubMenu};
 use tokio::sync::Notify;
 use zbus::Connection;
 
-use crate::apps::AppEntry;
+use crate::apps::{AppEntry, read_icon};
 use crate::config::Settings;
 use crate::state::State;
 use crate::{bus, cli, notify};
@@ -79,7 +78,7 @@ impl WaydroidTray {
         self.apps = apps
             .into_iter()
             .map(|app| {
-                let png = fs::read(&app.icon).unwrap_or_default();
+                let png = read_icon(&app.icon);
                 (app, png)
             })
             .collect();

@@ -130,6 +130,7 @@ async fn main() {
     let runtime =
         std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
     let apps_dir = home.join(".local/share/applications");
+    let icons_dir = home.join(".local/share/waydroid/data/icons");
     let config_path = Config::path(&home);
 
     let lock = File::create(runtime.join("waydroid-tray.lock")).expect("create lock file");
@@ -179,7 +180,7 @@ async fn main() {
         spawn_waydroid(&["session", "start"], session.clone());
     }
 
-    let mut apps = list_apps(&apps_dir);
+    let mut apps = list_apps(&apps_dir, &icons_dir);
     let mut tray = WaydroidTray::new(
         state,
         home.join(".local/share/icons")
@@ -234,7 +235,7 @@ async fn main() {
             State::Frozen => frozen_since.or_else(|| Some(since_boot())),
             _ => None,
         };
-        let new_apps = list_apps(&apps_dir);
+        let new_apps = list_apps(&apps_dir, &icons_dir);
         if new_state == state && new_apps == apps && container_up == was_container_up {
             continue;
         }
