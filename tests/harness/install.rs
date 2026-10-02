@@ -32,7 +32,7 @@ async fn install_writes_the_setup_and_uninstall_removes_it() {
     }
     assert!(!old_icon.exists());
     let unit = fs::read_to_string(home.join(FILES[4])).unwrap();
-    let exec = format!("ExecStart={}\n", env!("CARGO_BIN_EXE_waydroid-tray"));
+    let exec = format!("ExecStart=\"{}\"\n", env!("CARGO_BIN_EXE_waydroid-tray"));
     assert!(unit.contains(&exec), "{unit}");
     assert_eq!(
         take_calls(&harness),
