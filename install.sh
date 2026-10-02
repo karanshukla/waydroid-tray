@@ -8,11 +8,21 @@
 set -eu
 
 repo="karanshukla/waydroid-tray"
-here=$(cd "$(dirname "$0")" && pwd)
 bin="$HOME/.local/bin/waydroid-tray"
 
-# Piped into sh, $0 isn't this file, so there's nothing next to it to install.
-if [ ! -f "$here/waydroid-tray.desktop" ]; then
+# Piped into sh, $0 is the shell rather than this file, and dirname "$0" is
+# whatever directory curl ran in. Only trust the files next to this script
+# when it really is one: a checkout, or an unpacked release archive.
+here=
+if [ -f "$0" ] && [ "$(basename "$0")" = install.sh ]; then
+    dir=$(cd "$(dirname "$0")" && pwd)
+    if grep -qx 'name = "waydroid-tray"' "$dir/Cargo.toml" 2>/dev/null ||
+        { [ -f "$dir/waydroid-tray" ] && [ -f "$dir/waydroid-tray.desktop" ]; }; then
+        here=$dir
+    fi
+fi
+
+if [ -z "$here" ]; then
     case "$(uname -m)" in
         x86_64) arch=x86_64 ;;
         aarch64 | arm64) arch=aarch64 ;;
