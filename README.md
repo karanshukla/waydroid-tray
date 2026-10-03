@@ -73,7 +73,7 @@ Two features need services your desktop may not run. Failure notifications need 
 
 ## Releasing
 
-Bump `version` in `Cargo.toml`, then push a matching tag (`git tag v0.1.1 && git push origin v0.1.1`). The release workflow builds static x86_64 and arm64 binaries and attaches them to a GitHub release. The install script picks up the newest one. The same workflow then publishes that version to crates.io through [trusted publishing](https://crates.io/docs/trusted-publishing), so there's no token to keep around. It refuses to publish if the tag and `Cargo.toml` disagree.
+Bump `version` in `Cargo.toml`, then push a matching tag (`git tag v0.1.1 && git push origin v0.1.1`). The release workflow builds static x86_64 and arm64 binaries and attaches them to a GitHub release, with a `SHA256SUMS` the install script checks them against. The install script picks up the newest one. The same workflow then publishes that version to crates.io through [trusted publishing](https://crates.io/docs/trusted-publishing), so there's no token to keep around. It refuses to publish if the tag and `Cargo.toml` disagree.
 
 ## Why it doesn't use `waydroid status`
 
