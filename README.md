@@ -26,11 +26,19 @@ If a Waydroid command fails, you get a desktop notification with the end of its 
 
 ## Install
 
-On x86_64 or arm64, this downloads the latest release binary. No Rust toolchain needed:
+On x86_64 or arm64, this downloads the latest release binary and checks it against the release's `SHA256SUMS` before installing it. No Rust toolchain needed:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/install.sh | sh
 ```
+
+To install a particular release instead, name its tag:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/install.sh | WAYDROID_TRAY_VERSION=vX.Y.Z sh
+```
+
+Releases up to 0.3.0 have no `SHA256SUMS`, so the script won't install them. Build one of those from source instead.
 
 It installs to `~/.local/bin` and adds the icons, a menu entry, and a systemd user unit (`waydroid-tray.service`) that starts the tray with your desktop session and restarts it if it crashes. The unit starts with `graphical-session.target` where your desktop has one, and from an autostart entry where it doesn't. To remove it:
 
