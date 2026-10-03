@@ -647,6 +647,7 @@ version = "0.3.0"
 dependencies = [
  "futures-util",
  "ksni",
+ "libc",
  "serde",
  "tokio",
  "zbus",

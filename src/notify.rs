@@ -19,7 +19,7 @@ pub async fn failure(session: &Connection, summary: &str, body: &str) {
                 0u32,
                 "waydroid-tray",
                 summary,
-                body,
+                escape_markup(body).as_str(),
                 Vec::<&str>::new(),
                 hints,
                 -1i32,
@@ -28,5 +28,25 @@ pub async fn failure(session: &Connection, summary: &str, body: &str) {
         .await;
     if let Err(err) = reply {
         eprintln!("{summary}: {body} (notification failed: {err})");
+    }
+}
+
+/// Servers may render the body as markup, and it's Waydroid's error output.
+fn escape_markup(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markup_in_the_body_is_shown_as_text() {
+        assert_eq!(
+            escape_markup(r#"<a href="x">&amp;</a>"#),
+            r#"&lt;a href="x"&gt;&amp;amp;&lt;/a&gt;"#
+        );
     }
 }

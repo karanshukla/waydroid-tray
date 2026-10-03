@@ -9,8 +9,11 @@ mod notify;
 mod state;
 mod tray;
 
+use std::ffi::OsString;
 use std::fs::File;
-use std::path::PathBuf;
+use std::io;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
@@ -123,16 +126,37 @@ fn idle_left(frozen_since: Option<Duration>, now: Duration, timeout: Duration) -
     frozen_since.map(|since| timeout.saturating_sub(now.saturating_sub(since)))
 }
 
+/// Only `XDG_RUNTIME_DIR` is private to this user. A lock anywhere shared,
+/// like /tmp, could be created first by someone else to stop the tray.
+fn runtime_dir(var: Option<OsString>) -> Option<PathBuf> {
+    var.map(PathBuf::from).filter(|dir| dir.is_absolute())
+}
+
+fn open_lock(runtime: &Path) -> io::Result<File> {
+    File::options()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(runtime.join("waydroid-tray.lock"))
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     print_flags_and_exit().await;
     let home = home();
-    let runtime =
-        std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
+    let Some(runtime) = runtime_dir(std::env::var_os("XDG_RUNTIME_DIR")) else {
+        eprintln!(
+            "XDG_RUNTIME_DIR isn't set to an absolute path, so there's nowhere to keep the lock"
+        );
+        std::process::exit(1);
+    };
     let apps_dir = home.join(".local/share/applications");
+    let icons_dir = home.join(".local/share/waydroid/data/icons");
     let config_path = Config::path(&home);
 
-    let lock = File::create(runtime.join("waydroid-tray.lock")).expect("create lock file");
+    let lock = open_lock(&runtime).expect("create lock file");
     if lock.try_lock().is_err() {
         eprintln!("waydroid-tray is already running");
         std::process::exit(1);
@@ -179,7 +203,7 @@ async fn main() {
         spawn_waydroid(&["session", "start"], session.clone());
     }
 
-    let mut apps = list_apps(&apps_dir);
+    let mut apps = list_apps(&apps_dir, &icons_dir);
     let mut tray = WaydroidTray::new(
         state,
         home.join(".local/share/icons")
@@ -234,7 +258,7 @@ async fn main() {
             State::Frozen => frozen_since.or_else(|| Some(since_boot())),
             _ => None,
         };
-        let new_apps = list_apps(&apps_dir);
+        let new_apps = list_apps(&apps_dir, &icons_dir);
         if new_state == state && new_apps == apps && container_up == was_container_up {
             continue;
         }
@@ -289,6 +313,29 @@ mod tests {
             idle_left(Some(secs(700)), secs(100), TIMEOUT),
             Some(TIMEOUT)
         );
+    }
+
+    #[test]
+    fn the_lock_needs_an_absolute_runtime_dir() {
+        assert_eq!(runtime_dir(None), None);
+        assert_eq!(runtime_dir(Some("".into())), None);
+        assert_eq!(runtime_dir(Some("run/user/1000".into())), None);
+        assert_eq!(
+            runtime_dir(Some("/run/user/1000".into())),
+            Some(PathBuf::from("/run/user/1000"))
+        );
+    }
+
+    #[test]
+    fn the_lock_is_not_opened_through_a_symlink() {
+        let dir = std::env::temp_dir().join(format!("waydroid-tray-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(dir.join("target"), dir.join("waydroid-tray.lock")).unwrap();
+        let opened = open_lock(&dir);
+        let created_target = dir.join("target").exists();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(opened.is_err());
+        assert!(!created_target);
     }
 
     #[test]

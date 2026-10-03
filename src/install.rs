@@ -66,10 +66,7 @@ pub async fn install(home: &Path) -> io::Result<()> {
         write(&paths.status_icons.join(name), svg)?;
     }
     write(&paths.app_icon, APP_ICON)?;
-    write(
-        &paths.unit,
-        &UNIT.replace(DEFAULT_EXEC, &exe.to_string_lossy()),
-    )?;
+    write(&paths.unit, &UNIT.replace(DEFAULT_EXEC, &exec_path(&exe)?))?;
     write(&paths.launcher, DESKTOP)?;
     write(&paths.autostart, DESKTOP)?;
 
@@ -122,6 +119,18 @@ pub async fn uninstall(home: &Path) -> io::Result<()> {
     }
     println!("Removed the waydroid-tray unit, icons and menu entries.");
     Ok(())
+}
+
+/// `path` as the command in `ExecStart=`: quoted, with `%` doubled so systemd
+/// doesn't expand it as a specifier. systemd refuses a command containing
+/// quotes, backslashes or control characters, so those are an error here.
+fn exec_path(path: &Path) -> io::Result<String> {
+    let unsafe_char = |c: char| c.is_control() || matches!(c, '"' | '\'' | '\\');
+    let path = path
+        .to_str()
+        .filter(|path| !path.contains(unsafe_char))
+        .ok_or_else(|| io::Error::other(format!("systemd can't run {}", path.display())))?;
+    Ok(format!("\"{}\"", path.replace('%', "%%")))
 }
 
 fn write(path: &Path, contents: &str) -> io::Result<()> {
@@ -248,4 +257,40 @@ fn other_trays() -> Vec<String> {
         .filter(|pid| *pid != me)
         .map(String::from)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exec_path_is_quoted() {
+        let path = Path::new("/home/a b/.cargo/bin/waydroid-tray");
+        assert_eq!(
+            exec_path(path).unwrap(),
+            r#""/home/a b/.cargo/bin/waydroid-tray""#
+        );
+    }
+
+    /// systemd doesn't expand variables in the command itself.
+    #[test]
+    fn exec_path_escapes_specifiers_only() {
+        let path = Path::new("/home/%h/$HOME/waydroid-tray");
+        assert_eq!(
+            exec_path(path).unwrap(),
+            r#""/home/%%h/$HOME/waydroid-tray""#
+        );
+    }
+
+    #[test]
+    fn exec_path_refuses_what_systemd_would() {
+        for path in [
+            "/home/a\nExecStartPre=/bin/x",
+            "/home/\"a",
+            "/home/'a",
+            "/home/a\\b",
+        ] {
+            assert!(exec_path(Path::new(path)).is_err(), "{path:?}");
+        }
+    }
 }
