@@ -216,7 +216,12 @@ async fn main() {
     );
     tray.container_up = container_up;
     tray.set_apps(apps.clone());
-    let handle = tray.spawn().await.expect("register the tray icon");
+    // gamescope Game Mode has no tray host: wait for one instead of panicking into a restart loop.
+    let handle = tray
+        .assume_sni_available(true)
+        .spawn()
+        .await
+        .expect("register the tray icon");
 
     let mut interval = tokio::time::interval(POLL);
     let idle_after = idle_timeout();
