@@ -70,6 +70,7 @@ The tray is a [StatusNotifierItem](https://www.freedesktop.org/wiki/Specificatio
 - **GNOME** needs the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). Ubuntu ships it enabled.
 - **XFCE, Cinnamon, Budgie, LXQt and COSMIC** have one, though on some it's a panel applet you add yourself.
 - **Sway, Hyprland, niri** and other compositors without a panel of their own need a bar with a tray, such as [Waybar](https://github.com/Alexays/Waybar).
+- **gamescope Game Mode** (Bazzite, SteamOS) has no tray host. The tray keeps running without an icon, so the idle auto-stop still works, and the icon appears if a host turns up.
 
 Compositors that don't run XDG autostart entries or reach `graphical-session.target` won't start the tray at login. Have them run this at startup instead, e.g. from an `exec` line in Sway's config:
 
