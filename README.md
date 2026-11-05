@@ -48,7 +48,9 @@ curl -fsSL https://raw.githubusercontent.com/karanshukla/waydroid-tray/main/inst
 
 To build from source instead, run `./install.sh` from a checkout (needs a Rust toolchain). `./install.sh --uninstall` works there too.
 
-On an immutable distro (Silverblue, Kinoite, Bazzite, SteamOS and the like), everything above lands in your home directory, so none of it needs root or a layered package. If your Rust toolchain lives in a toolbox or distrobox, `./install.sh` and `waydroid-tray --install` work from inside it: the unit is set up on the host through the shared session bus. The tray itself runs on the host, so build it in a container whose distro isn't newer than the host, which is toolbox's default. Otherwise the binary won't find the glibc it was built against.
+On an immutable distro (Silverblue, Kinoite, Bazzite, Aeon, SteamOS and the like), everything above lands in your home directory, so the tray itself needs no root or layered package. It still needs a working Waydroid, which is a separate install. On openSUSE Aeon and Kalpa that's `sudo transactional-update pkg install waydroid` and a reboot. SteamOS and Endless OS don't support Waydroid: on SteamOS it takes third-party scripts and `steamos-readonly disable`, and an OS update wipes it.
+
+If your Rust toolchain lives in a toolbox or distrobox, `./install.sh` and `waydroid-tray --install` work from inside it: the unit is set up on the host through the shared session bus. The tray itself runs on the host, so build it in a container whose distro isn't newer than the host, which is toolbox's default. Otherwise the binary won't find the glibc it was built against.
 
 It's also [on crates.io](https://crates.io/crates/waydroid-tray). Cargo only installs the binary, so run `--install` afterwards for the icons, unit and menu entries. The unit runs the binary from `~/.cargo/bin`:
 
@@ -67,7 +69,7 @@ Re-running the installer restarts the tray on the new build, and `--uninstall` s
 The tray is a [StatusNotifierItem](https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/), so it shows up in any panel that hosts those:
 
 - **KDE Plasma** has it built in.
-- **GNOME** needs the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). Ubuntu ships it enabled.
+- **GNOME** needs the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). Ubuntu ships it enabled and Bluefin ships it; stock Fedora Silverblue and openSUSE Aeon don't, but a per-user install from extensions.gnome.org works with no layering.
 - **XFCE, Cinnamon, Budgie, LXQt and COSMIC** have one, though on some it's a panel applet you add yourself.
 - **Sway, Hyprland, niri** and other compositors without a panel of their own need a bar with a tray, such as [Waybar](https://github.com/Alexays/Waybar).
 - **gamescope Game Mode** (Bazzite, SteamOS) has no tray host. The tray keeps running without an icon, so the idle auto-stop still works, and the icon appears if a host turns up.
