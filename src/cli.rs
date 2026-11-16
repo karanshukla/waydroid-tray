@@ -1,25 +1,26 @@
 //! Running the `waydroid` command.
 
 use std::fs::{self, File};
-use std::io::{Read, Seek};
-use std::process::Stdio;
+use std::io::{self, Read, Seek};
+use std::process::{ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use zbus::Connection;
 
 use crate::notify;
 
 /// `session start` only returns when the session ends, so it only counts as
-/// failed if it exits within this long.
+/// failed if it exits within this long (pinned by
+/// `harness::command_errors::session_start_exiting_zero_early_is_notified`,
+/// `harness::command_errors::lasting_session_start_is_not_notified`).
 const START_GRACE: Duration = Duration::from_secs(5);
-/// How much of a failed command's stderr to show.
-const ERROR_LINES: usize = 5;
+const ERROR_LINES_SHOWN: usize = 5;
 
 /// Runs `waydroid` in the background and shows a notification if it fails.
 pub fn spawn_waydroid(args: &[&str], session: Connection) {
-    let command = format!("waydroid {}", args.join(" "));
+    let summary = format!("waydroid {} failed", args.join(" "));
     let starts_session = args == ["session", "start"];
     // A file, not a pipe: a session outliving the tray would get EPIPE writing to one.
     let stderr = scratch_file();
@@ -37,19 +38,12 @@ pub fn spawn_waydroid(args: &[&str], session: Connection) {
         .process_group(0)
         .spawn();
     tokio::spawn(async move {
-        let summary = format!("{command} failed");
-        let status = match child {
+        let mut child = match child {
+            Ok(child) => child,
             Err(err) => return notify::failure(&session, &summary, &err.to_string()).await,
-            Ok(mut child) if starts_session => {
-                match tokio::time::timeout(START_GRACE, child.wait()).await {
-                    Err(_) => return drop(child.wait().await),
-                    Ok(status) => status,
-                }
-            }
-            Ok(mut child) => match child.wait().await {
-                Ok(status) if status.success() => return,
-                status => status,
-            },
+        };
+        let Some(status) = failed_exit(&mut child, starts_session).await else {
+            return;
         };
         let body = stderr.and_then(last_lines).unwrap_or_else(|| match status {
             Ok(status) => status.to_string(),
@@ -57,6 +51,22 @@ pub fn spawn_waydroid(args: &[&str], session: Connection) {
         });
         notify::failure(&session, &summary, &body).await;
     });
+}
+
+/// Waits for `child` and returns its exit if that was a failure. A session
+/// start that outlasts `START_GRACE` is waited out and never fails.
+async fn failed_exit(child: &mut Child, starts_session: bool) -> Option<io::Result<ExitStatus>> {
+    if starts_session {
+        let early = tokio::time::timeout(START_GRACE, child.wait()).await;
+        if early.is_err() {
+            let _ = child.wait().await;
+        }
+        return early.ok();
+    }
+    match child.wait().await {
+        Ok(status) if status.success() => None,
+        status => Some(status),
+    }
 }
 
 /// An already-deleted temp file, to capture a child's stderr in.
@@ -83,6 +93,6 @@ fn last_lines(mut file: File) -> Option<String> {
     file.rewind().ok()?;
     file.read_to_string(&mut text).ok()?;
     let lines: Vec<&str> = text.lines().collect();
-    let tail = lines[lines.len().saturating_sub(ERROR_LINES)..].join("\n");
+    let tail = lines[lines.len().saturating_sub(ERROR_LINES_SHOWN)..].join("\n");
     (!tail.is_empty()).then_some(tail)
 }

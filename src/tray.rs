@@ -12,31 +12,44 @@ use crate::config::Settings;
 use crate::state::State;
 use crate::{bus, cli, notify};
 
-pub struct WaydroidTray {
+/// What the tray shows. The main loop redraws it only when this changes.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Snapshot {
     pub state: State,
-    /// Whether the container service is up, which it can be with no session.
+    /// The container service can be up with no session.
     pub container_up: bool,
-    apps: Vec<(AppEntry, Vec<u8>)>,
+    pub apps: Vec<AppEntry>,
+}
+
+pub struct WaydroidTray {
+    state: State,
+    container_up: bool,
+    apps: Vec<AppItem>,
     icon_theme_path: String,
     settings: Settings,
     system: Connection,
     session: Connection,
+    /// Notified after every menu action, so the main loop re-reads the state
+    /// sooner.
     poke: Arc<Notify>,
 }
 
+struct AppItem {
+    entry: AppEntry,
+    png: Vec<u8>,
+}
+
 impl WaydroidTray {
-    /// `poke` is notified after every menu action, so the caller can refresh
-    /// the state sooner.
     pub fn new(
-        state: State,
+        snapshot: Snapshot,
         icon_theme_path: String,
         settings: Settings,
         system: Connection,
         session: Connection,
         poke: Arc<Notify>,
     ) -> Self {
-        Self {
-            state,
+        let mut tray = Self {
+            state: State::Stopped,
             container_up: false,
             apps: Vec::new(),
             icon_theme_path,
@@ -44,7 +57,22 @@ impl WaydroidTray {
             system,
             session,
             poke,
-        }
+        };
+        tray.show(snapshot);
+        tray
+    }
+
+    pub fn show(&mut self, snapshot: Snapshot) {
+        self.state = snapshot.state;
+        self.container_up = snapshot.container_up;
+        self.apps = snapshot
+            .apps
+            .into_iter()
+            .map(|entry| AppItem {
+                png: read_icon(&entry.icon),
+                entry,
+            })
+            .collect();
     }
 
     fn run(&self, args: &[&str]) {
@@ -53,35 +81,51 @@ impl WaydroidTray {
     }
 
     fn call(&self, method: &'static str) {
-        let (system, session, poke) =
-            (self.system.clone(), self.session.clone(), self.poke.clone());
-        tokio::spawn(async move {
-            if let Err(err) = bus::call(&system, method).await {
-                notify::failure(&session, &format!("{method} failed"), &err.to_string()).await;
-            }
-            poke.notify_one();
+        self.on_system_bus(format!("{method} failed"), move |system| async move {
+            bus::call(&system, method).await
         });
     }
 
     fn stop_container_service(&self) {
+        self.on_system_bus(
+            "Stop container service failed".into(),
+            |system| async move { bus::stop_container_service(&system).await },
+        );
+    }
+
+    /// Runs `action` in the background, notifies `failure` if it fails, and
+    /// pokes the main loop either way.
+    fn on_system_bus<F, Fut>(&self, failure: String, action: F)
+    where
+        F: FnOnce(Connection) -> Fut + Send + 'static,
+        Fut: Future<Output = zbus::Result<()>> + Send,
+    {
         let (system, session, poke) =
             (self.system.clone(), self.session.clone(), self.poke.clone());
         tokio::spawn(async move {
-            if let Err(err) = bus::stop_container_service(&system).await {
-                notify::failure(&session, "Stop container service failed", &err.to_string()).await;
+            if let Err(err) = action(system).await {
+                notify::failure(&session, &failure, &err.to_string()).await;
             }
             poke.notify_one();
         });
     }
 
-    pub fn set_apps(&mut self, apps: Vec<AppEntry>) {
-        self.apps = apps
-            .into_iter()
+    fn app_items(&self) -> Vec<MenuItem<Self>> {
+        self.apps
+            .iter()
             .map(|app| {
-                let png = read_icon(&app.icon);
-                (app, png)
+                let package = app.entry.package.clone();
+                StandardItem {
+                    label: app.entry.name.clone(),
+                    icon_data: app.png.clone(),
+                    activate: Box::new(move |tray: &mut Self| {
+                        tray.run(&["app", "launch", &package])
+                    }),
+                    ..Default::default()
+                }
+                .into()
             })
-            .collect();
+            .collect()
     }
 }
 
@@ -119,7 +163,9 @@ impl ksni::Tray for WaydroidTray {
         }
     }
 
-    /// Middle click toggles the session.
+    /// Middle click toggles the session (pinned by
+    /// `harness::middle_click::middle_click_starts_a_stopped_session`,
+    /// `harness::middle_click::middle_click_stops_a_running_session`).
     fn secondary_activate(&mut self, _x: i32, _y: i32) {
         if self.state == State::Stopped {
             self.run(&["session", "start"]);
@@ -136,22 +182,7 @@ impl ksni::Tray for WaydroidTray {
         } else {
             "Freeze"
         };
-        let apps: Vec<MenuItem<Self>> = self
-            .apps
-            .iter()
-            .map(|(app, png)| {
-                let package = app.package.clone();
-                StandardItem {
-                    label: app.name.clone(),
-                    icon_data: png.clone(),
-                    activate: Box::new(move |tray: &mut Self| {
-                        tray.run(&["app", "launch", &package])
-                    }),
-                    ..Default::default()
-                }
-                .into()
-            })
-            .collect();
+        let apps = self.app_items();
 
         vec![
             StandardItem {

@@ -61,9 +61,8 @@ async fn idle_toggle_arms_the_timer_and_persists() {
     wait_for("session stop", idle_budget(), async || stopped_once(&h)).await;
 }
 
-/// The pair for `arming_the_toggle_restarts_the_clock`: a session that has
-/// been frozen for longer than the timeout is still given a full timeout from
-/// the moment the toggle goes on, not stopped straight away.
+/// A session frozen for longer than the timeout still gets a full timeout
+/// from the moment the toggle goes on.
 #[tokio::test]
 async fn arming_the_toggle_restarts_the_clock() {
     let mut h = Harness::new().await;

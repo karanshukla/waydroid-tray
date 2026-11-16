@@ -11,7 +11,7 @@ use std::time::Duration;
 use zbus::zvariant::OwnedObjectPath;
 use zbus::{Connection, Proxy};
 
-use crate::bus::{SYSTEMD_MANAGER, SYSTEMD_NAME, SYSTEMD_PATH};
+use crate::bus::{REPLACE_QUEUED_JOB, SYSTEMD_MANAGER, SYSTEMD_NAME, SYSTEMD_PATH};
 
 const UNIT: &str = include_str!("../waydroid-tray.service");
 const DESKTOP: &str = include_str!("../waydroid-tray.desktop");
@@ -59,17 +59,7 @@ impl Paths {
 }
 
 pub async fn install(home: &Path) -> io::Result<()> {
-    let paths = Paths::new(home);
-    let exe = std::env::current_exe()?;
-    remove_status_icons(&paths.status_icons)?;
-    for (name, svg) in STATUS_ICONS {
-        write(&paths.status_icons.join(name), svg)?;
-    }
-    write(&paths.app_icon, APP_ICON)?;
-    write(&paths.unit, &UNIT.replace(DEFAULT_EXEC, &exec_path(&exe)?))?;
-    write(&paths.launcher, DESKTOP)?;
-    write(&paths.autostart, DESKTOP)?;
-
+    write_files(&Paths::new(home), &std::env::current_exe()?)?;
     let systemd = UserSystemd::connect().await?;
     systemd.call("Reload", &()).await?;
     systemd
@@ -83,16 +73,25 @@ pub async fn install(home: &Path) -> io::Result<()> {
         println!("Installed. The tray starts with your next desktop session.");
         return Ok(());
     }
-    // Waydroid needs it, and not every desktop passes it on to systemd.
     if !wayland.is_empty() {
-        let assignment = format!("WAYLAND_DISPLAY={wayland}");
-        systemd
-            .call("SetEnvironment", &(&[assignment][..],))
-            .await?;
+        systemd.pass_wayland_display(&wayland).await?;
     }
-    systemd.call("StartUnit", &(UNIT_NAME, "replace")).await?;
+    systemd
+        .call("StartUnit", &(UNIT_NAME, REPLACE_QUEUED_JOB))
+        .await?;
     println!("Installed and started the tray.");
     Ok(())
+}
+
+fn write_files(paths: &Paths, exe: &Path) -> io::Result<()> {
+    remove_status_icons(&paths.status_icons)?;
+    for (name, svg) in STATUS_ICONS {
+        write(&paths.status_icons.join(name), svg)?;
+    }
+    write(&paths.app_icon, APP_ICON)?;
+    write(&paths.unit, &UNIT.replace(DEFAULT_EXEC, &exec_path(exe)?))?;
+    write(&paths.launcher, DESKTOP)?;
+    write(&paths.autostart, DESKTOP)
 }
 
 /// Leaves the binary itself to whatever installed it.
@@ -149,7 +148,7 @@ fn remove(path: &Path) -> io::Result<()> {
     }
 }
 
-/// Including any an older version named differently.
+/// Every `waydroid-tray-*.svg`, so a renamed icon doesn't linger.
 fn remove_status_icons(dir: &Path) -> io::Result<()> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Ok(());
@@ -193,6 +192,12 @@ impl UserSystemd {
             .map_err(|err| io::Error::other(format!("systemd {method}: {err}")))
     }
 
+    /// Waydroid needs it, and not every desktop passes it on to systemd.
+    async fn pass_wayland_display(&self, wayland: &str) -> io::Result<()> {
+        let assignment = format!("WAYLAND_DISPLAY={wayland}");
+        self.call("SetEnvironment", &(&[assignment][..],)).await
+    }
+
     async fn is_active(&self, unit: &str) -> bool {
         let Ok(reply) = self.0.call_method("GetUnit", &(unit,)).await else {
             return false;
@@ -215,7 +220,9 @@ impl UserSystemd {
 /// seconds get SIGKILL.
 async fn stop_tray(systemd: Option<&UserSystemd>) {
     if let Some(systemd) = systemd {
-        let _ = systemd.call("StopUnit", &(UNIT_NAME, "replace")).await;
+        let _ = systemd
+            .call("StopUnit", &(UNIT_NAME, REPLACE_QUEUED_JOB))
+            .await;
     }
     for _ in 0..50 {
         let others = other_trays();

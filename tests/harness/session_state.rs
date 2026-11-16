@@ -1,4 +1,4 @@
-//! Session state follows NameOwnerChanged (#2).
+//! Session state follows NameOwnerChanged.
 
 use std::time::Duration;
 
