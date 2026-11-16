@@ -31,7 +31,8 @@ pub async fn failure(session: &Connection, summary: &str, body: &str) {
     }
 }
 
-/// Servers may render the body as markup, and it's Waydroid's error output.
+/// Servers may render the body as markup, and it's Waydroid's error output
+/// (pinned by `tests::markup_in_the_body_is_shown_as_text`).
 fn escape_markup(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")

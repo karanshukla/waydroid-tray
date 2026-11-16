@@ -73,7 +73,6 @@ impl Settings {
         }
     }
 
-    /// For the main loop, which owns the idle timer.
     pub fn auto_stop(&self) -> Arc<AtomicBool> {
         self.auto_stop.clone()
     }
@@ -93,11 +92,12 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     #[test]
     fn round_trip() {
-        let path =
-            std::env::temp_dir().join(format!("waydroid-tray-test-{}/config", std::process::id()));
+        let dir = Scratch::new("config-round-trip");
+        let path = dir.join("waydroid-tray/config");
         let config = Config {
             start_at_login: true,
             hide_when_stopped: false,
@@ -105,7 +105,6 @@ mod tests {
         };
         config.save(&path).unwrap();
         assert_eq!(Config::load(&path), config);
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -144,10 +143,8 @@ mod tests {
 
     #[test]
     fn toggle_writes_through_and_publishes_auto_stop() {
-        let path = std::env::temp_dir().join(format!(
-            "waydroid-tray-toggle-{}/config",
-            std::process::id()
-        ));
+        let dir = Scratch::new("config-toggle");
+        let path = dir.join("waydroid-tray/config");
         let mut settings = Settings::new(Config::default(), path.clone());
         let auto_stop = settings.auto_stop();
         settings.toggle(|config| &mut config.auto_stop_when_idle);
@@ -161,6 +158,5 @@ mod tests {
         );
         settings.toggle(|config| &mut config.auto_stop_when_idle);
         assert!(!auto_stop.load(Ordering::Relaxed));
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

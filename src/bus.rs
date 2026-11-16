@@ -21,17 +21,14 @@ pub const SYSTEMD_NAME: &str = "org.freedesktop.systemd1";
 pub const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
 pub const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
 /// systemd's usual job mode: take over from any job already queued for the unit.
-const REPLACE_QUEUED_JOB: &str = "replace";
+pub const REPLACE_QUEUED_JOB: &str = "replace";
 
-/// The container manager's unique bus name, if it's running. Asking the bus
-/// who owns a name never activates anything.
 async fn container_owner(system: &Connection) -> Option<OwnedUniqueName> {
     let dbus = DBusProxy::new(system).await.ok()?;
     let name = BusName::try_from(CONTAINER_NAME).expect("valid bus name");
     dbus.get_name_owner(name).await.ok()
 }
 
-/// Reads the session state without ever starting the container service.
 pub async fn read_state(system: &Connection) -> State {
     let Some(owner) = container_owner(system).await else {
         return State::Stopped;
@@ -51,8 +48,8 @@ pub async fn read_state(system: &Connection) -> State {
     }
 }
 
-/// Calls a container manager method that takes no arguments, e.g. `Freeze`.
-/// Does nothing if the container manager isn't running.
+/// Calls a no-argument container manager method, e.g. `Freeze`, if the
+/// container manager is running.
 pub async fn call(system: &Connection, method: &str) -> zbus::Result<()> {
     if let Some(owner) = container_owner(system).await {
         system

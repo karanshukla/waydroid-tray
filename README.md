@@ -107,6 +107,8 @@ The integration tests in `tests/harness/` run the real tray against private syst
 
 `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` both run in CI.
 
+Comments are the last resort: extract, name, or pin a rule with a test pair first, and cite the test from the code it governs as ``(pinned by `tests::name`)``. See [docs/comment-style.md](docs/comment-style.md); `tests/doc_links.rs` (CI job Doc Links) fails on a citation with no such test.
+
 ## Limits
 
 - Session start and stop come from D-Bus name changes. A stop shows up straight away. A start takes a moment longer, because Waydroid claims its session name before the container has a session to report, so the tray re-checks every 0.5s until it does. Freezing isn't signalled, so while a session exists the tray polls every 5s to tell Running from Frozen. It doesn't poll Waydroid at all while stopped.

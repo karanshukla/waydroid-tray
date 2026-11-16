@@ -3,7 +3,6 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
     Stopped,
-    /// Waydroid's session manager is up, but the container has no session yet.
     Starting,
     Running,
     Frozen,
@@ -32,12 +31,26 @@ impl State {
         }
     }
 
-    /// Pinned by the `with_session` tests below.
+    /// The container has no session yet while Waydroid's session manager is
+    /// already up (pinned by `tests::stopped_with_session_manager_up_is_starting`,
+    /// `tests::other_states_are_unchanged_by_the_session_manager`).
     pub fn with_session(self, session_up: bool) -> State {
         if session_up && self == State::Stopped {
             State::Starting
         } else {
             self
+        }
+    }
+
+    /// The container's state once the session manager has gone: any session
+    /// it still holds is orphaned (pinned by
+    /// `tests::a_container_session_without_a_session_manager_is_stuck`,
+    /// `tests::no_container_session_without_a_session_manager_is_stopped`).
+    pub fn without_session_manager(self) -> State {
+        if self == State::Stopped {
+            State::Stopped
+        } else {
+            State::Stuck
         }
     }
 }
@@ -57,5 +70,17 @@ mod tests {
             assert_eq!(state.with_session(true), state);
         }
         assert_eq!(State::Stopped.with_session(false), State::Stopped);
+    }
+
+    #[test]
+    fn a_container_session_without_a_session_manager_is_stuck() {
+        for state in [State::Running, State::Frozen, State::Starting, State::Stuck] {
+            assert_eq!(state.without_session_manager(), State::Stuck);
+        }
+    }
+
+    #[test]
+    fn no_container_session_without_a_session_manager_is_stopped() {
+        assert_eq!(State::Stopped.without_session_manager(), State::Stopped);
     }
 }

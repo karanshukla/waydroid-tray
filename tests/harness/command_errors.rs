@@ -1,4 +1,4 @@
-//! Notify when a waydroid command fails (#6).
+//! Notify when a waydroid command fails.
 
 use std::time::Duration;
 
@@ -28,9 +28,9 @@ async fn failed_command_is_notified_with_stderr() {
     );
 }
 
+/// Waydroid exits 0 when the container isn't listening.
 #[tokio::test]
 async fn session_start_exiting_zero_early_is_notified() {
-    // Waydroid exits 0 when the container isn't listening.
     let mut h = Harness::new().await;
     h.fail_waydroid(0);
     h.start_tray().await;

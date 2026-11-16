@@ -1,4 +1,4 @@
-//! Start the session at login (#4).
+//! Start the session at login.
 
 use std::time::Duration;
 

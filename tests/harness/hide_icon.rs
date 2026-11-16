@@ -1,4 +1,4 @@
-//! Hide the icon while stopped (#3).
+//! Hide the icon while stopped.
 
 use std::fs;
 

@@ -1,4 +1,4 @@
-//! Freeze and unfreeze (#5).
+//! Freeze and unfreeze.
 
 use crate::harness::{Harness, QUICK, wait_for};
 

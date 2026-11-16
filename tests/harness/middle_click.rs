@@ -1,4 +1,4 @@
-//! Middle click toggles the session (#8).
+//! Middle click toggles the session.
 
 use crate::harness::{Harness, QUICK, wait_for};
 

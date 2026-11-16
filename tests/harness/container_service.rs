@@ -1,4 +1,4 @@
-//! Stop the container service (#7).
+//! Stop the container service.
 
 use crate::harness::{Harness, QUICK, wait_for};
 
