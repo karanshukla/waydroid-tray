@@ -69,8 +69,12 @@ async fn failed_exit(child: &mut Child, starts_session: bool) -> Option<io::Resu
     }
 }
 
+const MAX_STDERR_BYTES: u64 = 64 * 1024;
+
 /// An already-deleted temp file, to capture a child's stderr in.
 fn scratch_file() -> Option<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
     static COUNT: AtomicU32 = AtomicU32::new(0);
     let name = format!(
         "waydroid-tray-{}-{}",
@@ -82,6 +86,7 @@ fn scratch_file() -> Option<File> {
         .read(true)
         .write(true)
         .create_new(true)
+        .mode(0o600)
         .open(&path)
         .ok()?;
     fs::remove_file(&path).ok()?;
@@ -89,10 +94,46 @@ fn scratch_file() -> Option<File> {
 }
 
 fn last_lines(mut file: File) -> Option<String> {
-    let mut text = String::new();
-    file.rewind().ok()?;
-    file.read_to_string(&mut text).ok()?;
+    let len = file.metadata().ok().map_or(0, |m| m.len());
+    if len > MAX_STDERR_BYTES {
+        file.seek(io::SeekFrom::End(-(MAX_STDERR_BYTES as i64)))
+            .ok()?;
+    } else {
+        file.rewind().ok()?;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_STDERR_BYTES).read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
     let lines: Vec<&str> = text.lines().collect();
     let tail = lines[lines.len().saturating_sub(ERROR_LINES_SHOWN)..].join("\n");
     (!tail.is_empty()).then_some(tail)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn scratch_file_is_private_and_unlinked() {
+        let mut f = scratch_file().expect("scratch file created");
+        let meta = f.metadata().unwrap();
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::os::unix::fs::MetadataExt::nlink(&meta), 0);
+        writeln!(f, "line1\nline2").unwrap();
+        assert_eq!(last_lines(f).as_deref(), Some("line1\nline2"));
+    }
+
+    #[test]
+    fn last_lines_caps_oversized_stderr_to_tail() {
+        let mut f = scratch_file().expect("scratch file created");
+        let filler = "x".repeat(1024);
+        for _ in 0..100 {
+            writeln!(f, "{filler}").unwrap();
+        }
+        writeln!(f, "tail-a\ntail-b").unwrap();
+        let got = last_lines(f).expect("last_lines returned Some");
+        assert!(got.ends_with("tail-a\ntail-b"), "{got}");
+    }
 }
