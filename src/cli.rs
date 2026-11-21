@@ -73,32 +73,15 @@ const MAX_STDERR_BYTES: u64 = 64 * 1024;
 
 /// An already-deleted temp file, to capture a child's stderr in.
 fn scratch_file() -> Option<File> {
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::fs::OpenOptionsExt;
 
     static COUNT: AtomicU32 = AtomicU32::new(0);
-    let mut rand_bytes = [0u8; 8];
-    if let Ok(mut urandom) = File::open("/dev/urandom") {
-        let _ = urandom.read_exact(&mut rand_bytes);
-    }
-    let rand_u64 = u64::from_ne_bytes(rand_bytes);
     let name = format!(
-        "waydroid-tray-{}-{}-{rand_u64:016x}",
+        "waydroid-tray-{}-{}",
         std::process::id(),
         COUNT.fetch_add(1, Ordering::Relaxed)
     );
-    let base_dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .filter(|v| !v.is_empty())
-        .map(std::path::PathBuf::from)
-        .filter(|dir| {
-            let our_uid = fs::metadata("/proc/self").ok().map(|m| m.uid());
-            let dir_uid = fs::symlink_metadata(dir)
-                .ok()
-                .filter(|m| m.is_dir())
-                .map(|m| m.uid());
-            our_uid.is_some() && our_uid == dir_uid
-        })
-        .unwrap_or_else(std::env::temp_dir);
-    let path = base_dir.join(name);
+    let path = std::env::temp_dir().join(name);
     let file = File::options()
         .read(true)
         .write(true)
