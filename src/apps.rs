@@ -29,10 +29,28 @@ pub fn list_apps(dir: &Path, icons: &Path) -> Vec<AppEntry> {
     apps
 }
 
+const MAX_LAUNCHER_BYTES: u64 = 64 * 1024;
+
 /// A `waydroid.<package>.desktop` launcher, unless it's hidden.
 fn read_launcher(path: &Path, icons: &Path) -> Option<AppEntry> {
     let package = package_of(path.file_name()?.to_str()?)?.to_owned();
-    let fields = desktop_entry(&fs::read_to_string(path).ok()?);
+    let file = File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > MAX_LAUNCHER_BYTES {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MAX_LAUNCHER_BYTES + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    if text.len() as u64 > MAX_LAUNCHER_BYTES {
+        return None;
+    }
+    let fields = desktop_entry(&text);
     let hidden = fields
         .get("NoDisplay")
         .is_some_and(|v| v.eq_ignore_ascii_case("true"));

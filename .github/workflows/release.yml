@@ -13,6 +13,7 @@ jobs:
   # token and doesn't keep it in .git/config. Only publish can write.
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       # Static musl binaries run on any distro. The dependencies are pure
       # Rust, so rust-lld can link the arm64 one without a cross toolchain.
@@ -24,6 +25,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          test "$GITHUB_REF_NAME" = "v$version" || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version" >&2; exit 1; }
       - name: Build and package
         run: |
           for arch in x86_64 aarch64; do
@@ -46,6 +51,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -63,6 +69,7 @@ jobs:
   crates-io:
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write

@@ -12,6 +12,11 @@ RestartPreventExitStatus=1
 # The tray starts Waydroid sessions in their own process groups. Only stop the
 # tray itself, so a restart doesn't end the session.
 KillMode=process
+UMask=0077
+NoNewPrivileges=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=graphical-session.target

@@ -69,19 +69,41 @@ async fn failed_exit(child: &mut Child, starts_session: bool) -> Option<io::Resu
     }
 }
 
+const MAX_STDERR_BYTES: u64 = 64 * 1024;
+
 /// An already-deleted temp file, to capture a child's stderr in.
 fn scratch_file() -> Option<File> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
     static COUNT: AtomicU32 = AtomicU32::new(0);
+    let mut rand_bytes = [0u8; 8];
+    if let Ok(mut urandom) = File::open("/dev/urandom") {
+        let _ = urandom.read_exact(&mut rand_bytes);
+    }
+    let rand_u64 = u64::from_ne_bytes(rand_bytes);
     let name = format!(
-        "waydroid-tray-{}-{}",
+        "waydroid-tray-{}-{}-{rand_u64:016x}",
         std::process::id(),
         COUNT.fetch_add(1, Ordering::Relaxed)
     );
-    let path = std::env::temp_dir().join(name);
+    let base_dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|dir| {
+            let our_uid = fs::metadata("/proc/self").ok().map(|m| m.uid());
+            let dir_uid = fs::symlink_metadata(dir)
+                .ok()
+                .filter(|m| m.is_dir())
+                .map(|m| m.uid());
+            our_uid.is_some() && our_uid == dir_uid
+        })
+        .unwrap_or_else(std::env::temp_dir);
+    let path = base_dir.join(name);
     let file = File::options()
         .read(true)
         .write(true)
         .create_new(true)
+        .mode(0o600)
         .open(&path)
         .ok()?;
     fs::remove_file(&path).ok()?;
@@ -89,10 +111,46 @@ fn scratch_file() -> Option<File> {
 }
 
 fn last_lines(mut file: File) -> Option<String> {
-    let mut text = String::new();
-    file.rewind().ok()?;
-    file.read_to_string(&mut text).ok()?;
+    let len = file.metadata().ok().map_or(0, |m| m.len());
+    if len > MAX_STDERR_BYTES {
+        file.seek(io::SeekFrom::End(-(MAX_STDERR_BYTES as i64)))
+            .ok()?;
+    } else {
+        file.rewind().ok()?;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_STDERR_BYTES).read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
     let lines: Vec<&str> = text.lines().collect();
     let tail = lines[lines.len().saturating_sub(ERROR_LINES_SHOWN)..].join("\n");
     (!tail.is_empty()).then_some(tail)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn scratch_file_is_private_and_unlinked() {
+        let mut f = scratch_file().expect("scratch file created");
+        let meta = f.metadata().unwrap();
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::os::unix::fs::MetadataExt::nlink(&meta), 0);
+        writeln!(f, "line1\nline2").unwrap();
+        assert_eq!(last_lines(f).as_deref(), Some("line1\nline2"));
+    }
+
+    #[test]
+    fn last_lines_caps_oversized_stderr_to_tail() {
+        let mut f = scratch_file().expect("scratch file created");
+        let filler = "x".repeat(1024);
+        for _ in 0..100 {
+            writeln!(f, "{filler}").unwrap();
+        }
+        writeln!(f, "tail-a\ntail-b").unwrap();
+        let got = last_lines(f).expect("last_lines returned Some");
+        assert!(got.ends_with("tail-a\ntail-b"), "{got}");
+    }
 }
